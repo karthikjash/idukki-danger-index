@@ -4,6 +4,32 @@
 
 The Idukki Monsoon Danger Index integrates data from publicly accessible sources. This document explains how each source is accessed and how to set up live data fetching in production.
 
+## Provider strategy (current build)
+
+Every number on the dashboard is provider-tagged, and the provider mix is
+keyed off one environment variable:
+
+| Role | Provider when key set | Provider otherwise | Where |
+|---|---|---|---|
+| Current conditions (wind/humidity/cloud/temp/pressure/live rain) | **OpenWeatherMap** (`OPENWEATHERMAP_API_KEY` in `.env`) — refresh ~10 min | Open-Meteo | `data/openweather.py`, `data/fetcher.py` |
+| Today's rain + 7-day danger outlook | Open-Meteo (OWM free forecast is only 5 days) | Open-Meteo | `data/fetcher.py` |
+| Rainfall-outlook chart | **OpenWeatherMap** 5-day/3-hour (aggregated to IST days) | Open-Meteo 7-day | `data/observed.py::build_trends` |
+| 30-day monsoon-pattern chart (measured) | Open-Meteo measured `past_days` (OWM free tier has **no history API**) | Open-Meteo measured | `data/observed.py` |
+| 48 h wind/humidity/temperature chart | **OpenWeatherMap** 3-hour steps | Open-Meteo hourly | `data/observed.py` |
+| Observed history store (soil saturation + ML retrains) | the project's own daily accumulator, seeded from Open-Meteo measured | same | `data/observed.py::LiveHistoryStore` |
+
+Measured history constraint is fundamental to the free tiers: OpenWeatherMap
+sells history (One-Call/History plans); it is not free. The project therefore
+accumulates its own observed record day by day (each server boot closes the
+previous fully-measured IST day), and retraining (`ml/train.py`) splices that
+record onto the ERA5 archive.
+
+Panchayat populations are authoritative (project owner, Census-2011 derived).
+Ward structures live in `data/static/wards.json` (Kumily = real LSG Kerala
+Election-2020 wards; others = modelled LSG-typical defaults). Ward populations
+are apportioned equal shares until a Census-2011 ward table is supplied via
+`data/static/wards_overrides.csv` (`locality,ward_no,ward_name,population,source`).
+
 ---
 
 ## 1. IMD (Indian Meteorological Department)
@@ -259,10 +285,10 @@ Add to crontab:
 
 ```bash
 # Refresh every 6 hours
-0 */6 * * * /usr/bin/python3 /home/homie/Projects/SSR_system/data/refresh.py
+0 */6 * * * /usr/bin/python3 <PROJECT_ROOT>/data/refresh.py
 
 # Refresh every 30 minutes (GPM IMERG)
-*/30 * * * * /usr/bin/python3 /home/homie/Projects/SSR_system/data/refresh_imerg.py
+*/30 * * * * /usr/bin/python3 <PROJECT_ROOT>/data/refresh_imerg.py
 ```
 
 ### Monitoring Data Freshness

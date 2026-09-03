@@ -110,7 +110,10 @@ class IdukiMapGenerator:
         # Icon mapping for incident types (use Folium-compatible colors)
         incident_icons = {
             'landslide': {'color': 'red', 'icon': 'warning'},
+            'mudslide': {'color': 'red', 'icon': 'warning'},
+            'debris_flow': {'color': 'orange', 'icon': 'arrow-down'},
             'flood': {'color': 'blue', 'icon': 'tint'},
+            'flash_flood': {'color': 'blue', 'icon': 'tint'},
             'dam': {'color': 'purple', 'icon': 'exclamation'},
             'debris': {'color': 'orange', 'icon': 'arrow-down'}
         }
@@ -161,23 +164,23 @@ class IdukiMapGenerator:
             </div>
             
             <div style="margin: 8px 0;">
-                <span style="background-color: #f39c12; padding: 3px 8px; border-radius: 3px; font-weight: bold;">█</span>
+                <span style="background-color: #f5a623; padding: 3px 8px; border-radius: 3px; font-weight: bold;">█</span>
                 <b>MODERATE</b> - Caution advised
             </div>
             
             <div style="margin: 8px 0;">
-                <span style="background-color: #e74c3c; padding: 3px 8px; border-radius: 3px; font-weight: bold;">█</span>
+                <span style="background-color: #ff5252; padding: 3px 8px; border-radius: 3px; font-weight: bold;">█</span>
                 <b>HIGH</b> - Stay indoors
             </div>
             
             <div style="margin: 8px 0;">
-                <span style="background-color: #8b0000; padding: 3px 8px; border-radius: 3px; font-weight: bold;">█</span>
+                <span style="background-color: #b0102e; padding: 3px 8px; border-radius: 3px; font-weight: bold;">█</span>
                 <b>EXTREME</b> - Evacuate!
             </div>
             
             <hr style="margin: 5px 0;">
             <div style="margin: 8px 0; font-size: 12px;">
-                <b>📍 Markers:</b> Past incidents (2004-2024)
+                <b>📍 Markers:</b> Past incidents (2004-2025)
             </div>
         </div>
         '''
@@ -200,9 +203,9 @@ class IdukiMapGenerator:
         """Convert hex color to Folium color name"""
         color_map = {
             '#2ecc71': 'green',
-            '#f39c12': 'orange',
-            '#e74c3c': 'red',
-            '#8b0000': 'darkred'
+            '#f5a623': 'orange',
+            '#ff5252': 'red',
+            '#b0102e': 'darkred'
         }
         return color_map.get(hex_color, 'gray')
 
@@ -245,19 +248,19 @@ if __name__ == '__main__':
         'Kumily': {
             'tier': 'High',
             'composite_score': 0.72,
-            'color': '#e74c3c',
+            'color': '#ff5252',
             'description': 'Current risk is HIGH.'
         },
         'Peermedu': {
             'tier': 'Extreme',
             'composite_score': 0.85,
-            'color': '#8b0000',
+            'color': '#b0102e',
             'description': 'Current risk is EXTREME.'
         },
         'Idukki': {
             'tier': 'Moderate',
             'composite_score': 0.48,
-            'color': '#f39c12',
+            'color': '#f5a623',
             'description': 'Current risk is MODERATE.'
         }
     }

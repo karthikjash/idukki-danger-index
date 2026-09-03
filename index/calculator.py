@@ -1,26 +1,45 @@
 """
 Composite Danger Index Calculation
 Combines Environmental Severity, Structural Risk, and Human Threat Level
-into a 4-tier index: Low / Moderate / High / Extreme
+into a 4-tier index: Low / Moderate / High / Extreme.
+
+Design notes (see also docs/METHODOLOGY.md):
+
+* Rainfall is scored against the IMD 24h rainfall categories (light, moderate,
+  rather heavy, heavy, very heavy, extremely heavy), NOT against a single
+  observed day. This avoids the previous over-fit where the scoring was
+  calibrated to one specific date's conditions.
+* The index is season-aware. Idukki's danger window is the south-west monsoon
+  (June-September). Outside that window the same rainfall drives a much lower
+  risk, which reflects reality: most of the district is genuinely safe for most
+  of the year.
+* Historical incidents and terrain only express themselves through the
+  structural-risk channel, which is *gated by rainfall*. Past incidents alone
+  can never raise the tier - they only amplify risk when heavy rain is
+  actually present. This fixes the earlier behaviour where localities showed
+  elevated risk purely because incidents had happened there before.
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Tuple
+from datetime import datetime, timedelta
+from typing import Dict, Optional, Tuple, List
 import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Census data for inner Idukki panchayats (population exposure)
+# Authoritative panchayat/municipality population totals (project owner,
+# Census-2011-derived). Used for population-exposure scoring AND for
+# apportioning the ward-level population model (index/wards.py).
 LOCALITY_POPULATION = {
-    'Kumily': 45000,
-    'Peermedu': 32000,
-    'Idukki': 28000,
-    'Adimali': 22000,
-    'Kattappana': 38000,
-    'Munnar': 35000,
-    'Nedumkandam': 18000
+    'Kumily': 33722,
+    'Peermedu': 22213,
+    'Idukki': 21724,
+    'Adimali': 40484,
+    'Kattappana': 42646,
+    'Munnar': 32039,
+    'Nedumkandam': 41980
 }
 
 # Terrain slope risk factors (approximate for inner Idukki)
@@ -34,269 +53,414 @@ TERRAIN_SLOPE_RISK = {
     'Nedumkandam': 0.65 # Steep
 }
 
-# Historical incident count (normalized 0-1) per locality
-HISTORICAL_INCIDENT_FACTOR = {
-    'Kumily': 0.75,
-    'Peermedu': 0.85,
-    'Idukki': 0.70,
-    'Adimali': 0.80,
-    'Kattappana': 0.65,
-    'Munnar': 0.60,
-    'Nedumkandam': 0.55
+# ---------------------------------------------------------------------------
+# Incident-history influence (data-derived, not hand-set)
+# ---------------------------------------------------------------------------
+# Industry framing (NDMA / BIS-IS14496 landslide-zonation practice): a
+# landslide/flood INVENTORY validates a susceptibility model; it does not
+# dominate it. So recorded incidents feed only the rainfall-gated structural
+# channel at a low, capped weight, and the per-locality factor below is
+# COMPUTED from the actual register - proximity-weighted, severity-weighted
+# and recency-decayed (a 2004 event weighs a fraction of a 2024 one).
+# Hand-tuned constants are gone; when the real KSDMA register replaces the
+# sample, the same function keeps working unchanged.
+_INCIDENT_FACTOR_CACHE: Dict[str, float] = {}
+_INCIDENT_SEVERITY_WT = {'extreme': 1.4, 'high': 1.0, 'moderate': 0.6, 'low': 0.3}
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math as _m
+    r = 6371.0
+    p1, p2 = _m.radians(lat1), _m.radians(lat2)
+    dp = _m.radians(lat2 - lat1)
+    dl = _m.radians(lon2 - lon1)
+    a = (_m.sin(dp / 2) ** 2 +
+         _m.cos(p1) * _m.cos(p2) * _m.sin(dl / 2) ** 2)
+    return 2 * r * _m.asin(_m.sqrt(a))
+
+
+def incident_history_factors(incidents_df=None) -> Dict[str, float]:
+    """Recency/severity-decayed incident influence per locality (0 .. ~0.3).
+
+    Sums, for every recorded incident within 20 km of the panchayat centre,
+    severity_weight / (years since + 1) and caps the total. Only ever used
+    through the rainfall-gated structural channel at a 15% sub-weight, so the
+    register can never manufacture danger by itself.
+    """
+    if incidents_df is None and _INCIDENT_FACTOR_CACHE:
+        return dict(_INCIDENT_FACTOR_CACHE)
+    if incidents_df is None:
+        try:
+            from data.fetcher import IDUKKI_INNER_BOUNDS, KSDMADataFetcher
+            incidents_df = KSDMADataFetcher().get_historical_incidents(IDUKKI_INNER_BOUNDS)
+        except Exception:  # noqa: BLE001 - factor defaults to a small constant
+            logger.warning('Incident register unavailable - using default factors')
+            return {}
+
+    try:
+        from data.fetcher import LOCALITIES
+    except Exception:  # noqa: BLE001
+        return {}
+
+    now_year = datetime.now().year
+    factors: Dict[str, float] = {}
+    for name, loc in LOCALITIES.items():
+        total = 0.0
+        for _, row in incidents_df.iterrows():
+            d = _haversine_km(loc['lat'], loc['lon'],
+                              float(row['latitude']), float(row['longitude']))
+            if d > 20.0:
+                continue
+            recency = 1.0 / max(1.0, now_year - int(row['year']) + 1)
+            sev = _INCIDENT_SEVERITY_WT.get(
+                str(row.get('severity', 'high')).lower(), 1.0)
+            total += sev * recency
+        factors[name] = round(min(0.30, 0.10 * total), 3)
+    _INCIDENT_FACTOR_CACHE.update(factors)
+    return factors
+
+
+def _observed_recent_rain_3d(locality: str, today_mm: float) -> Optional[float]:
+    """Measured rain accumulated over the last ~3 days (incl. today).
+
+    Uses the observed-history store (data/observed.py) which closes each
+    fully-measured day; returns None when no observed record exists yet.
+    """
+    try:
+        from data.fetcher import LOCALITIES
+        from data.observed import LiveHistoryStore
+        loc = LOCALITIES.get(locality)
+        if loc is None:
+            return None
+        store = LiveHistoryStore().recent(loc['lat'], loc['lon'], limit=6)
+        if store is None or store.empty:
+            return None
+        today = datetime.now().date()
+        cutoff = today - timedelta(days=3)
+        recent = store[store['date'].dt.date >= cutoff]
+        measured = float(recent['rain_mm'].sum()) if not recent.empty else 0.0
+        return round(measured + max(0.0, float(today_mm or 0.0)), 1)
+    except Exception as exc:  # noqa: BLE001 - never let history block scoring
+        logger.debug(f'recent-rain lookup failed for {locality}: {exc}')
+        return None
+
+# ---------------------------------------------------------------------------
+# Scoring constants
+# ---------------------------------------------------------------------------
+
+# IMD 24-hour rainfall categories (mm/day), used as score knots:
+#   0-7.5 light · 7.5-35.5 moderate · 35.5-64.5 rather heavy · 64.5-115.5 heavy
+#   115.5-204.5 very heavy · >204.5 extremely heavy
+RAIN_KNOTS = (
+    (0.0, 0.00),
+    (7.5, 0.05),
+    (35.5, 0.32),
+    (64.5, 0.55),
+    (115.5, 0.72),
+    (204.5, 0.90),
+    (250.0, 1.00),
+)
+
+# Monthly season scale for rainfall-driven danger. 1.0 = monsoon peak.
+# May and October are transition months; the rest of the year is dry.
+SEASON_SCALE = {
+    1: 0.25, 2: 0.25, 3: 0.25, 4: 0.35, 5: 0.60,
+    6: 1.00, 7: 1.00, 8: 1.00, 9: 1.00,
+    10: 0.60, 11: 0.35, 12: 0.25,
 }
+MONSOON_MONTHS = (6, 7, 8, 9)
+
+# Rainfall that fully "activates" structural vulnerability (mm/day).
+# Chosen so that IMD 'very heavy' rainfall (~115 mm/day) mostly activates it.
+RAIN_ACTIVATION_MM = 150.0
+
+# Composite weights (must sum to 1.0)
+W_ENV = 0.60       # Environmental severity (weather is the main driver)
+W_STRUCT = 0.25    # Structural risk (rainfall-gated vulnerability)
+W_HUMAN = 0.15     # Human threat level
+
+# Tier thresholds
+T_LOW, T_MOD, T_HIGH = 0.25, 0.50, 0.70
+
+
+def get_season_info(month: Optional[int] = None) -> Tuple[str, float]:
+    """Return (season_label, season_scale) for a month (default: now)."""
+    if month is None:
+        month = datetime.now().month
+    label = 'monsoon' if month in MONSOON_MONTHS else 'dry'
+    return label, SEASON_SCALE.get(month, 0.25)
+
+
+def _rainfall_score(rainfall_mm: float) -> float:
+    """Map daily rainfall to a 0-1 severity using the IMD category knots."""
+    x = max(0.0, rainfall_mm)
+    prev_x, prev_y = RAIN_KNOTS[0]
+    for knot_x, knot_y in RAIN_KNOTS[1:]:
+        if x <= knot_x:
+            if knot_x == prev_x:
+                return knot_y
+            frac = (x - prev_x) / (knot_x - prev_x)
+            return prev_y + frac * (knot_y - prev_y)
+        prev_x, prev_y = knot_x, knot_y
+    return prev_y
+
+
+def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, value))
 
 
 class DangerIndexCalculator:
     """Compute Danger Index from environmental and structural factors"""
-    
+
     def __init__(self, locality: str):
         self.locality = locality
         self.population = LOCALITY_POPULATION.get(locality, 30000)
         self.terrain_risk = TERRAIN_SLOPE_RISK.get(locality, 0.7)
-        self.historical_factor = HISTORICAL_INCIDENT_FACTOR.get(locality, 0.6)
-    
-    def calculate_environmental_severity(self, rainfall_mm: float, wind_mps: float, 
-                                         humidity_pct: float, cloud_cover_pct: float) -> float:
+        # data-derived (recency/severity-decayed register), capped ~0.30
+        self.historical_factor = incident_history_factors().get(locality, 0.10)
+
+    # ------------------------------------------------------------- sub-scores
+    def calculate_environmental_severity(self, rainfall_mm: float, wind_mps: float,
+                                         humidity_pct: float, cloud_cover_pct: float,
+                                         month: Optional[int] = None) -> float:
         """
-        Calculate Environmental Severity (0-1 normalized)
-        
-        CRITICAL RECALIBRATION based on AccuWeather Sept 1, 2026 data:
-        - Rainfall: 2-7mm/day (actual safe monsoon conditions)
-        - Humidity: 72-95% (normal monsoon range)
-        - Cloud: 70-100% (normal for monsoon)
-        - Wind: 10-22 km/h (2.8-6.1 m/s) (normal monsoon winds)
-        
-        Danger thresholds (for true risk):
-        - Safe: <10mm rainfall
-        - Elevated: 10-30mm rainfall
-        - High: 30-60mm rainfall
-        - Extreme: >60mm rainfall
-        
-        Returns: Score 0-1 (0=low severity, 1=extreme severity)
+        Environmental severity (0-1): how severe is the weather right now?
+
+        Rainfall is dominant (78%) and is scored against IMD daily categories,
+        scaled by season (dry-season rain is far less dangerous in Idukki).
+        Wind, humidity and cloud act only as small amplifiers.
+
+        Returns: Score 0-1 (0=benign weather, 1=catastrophic weather)
         """
-        
-        # Rainfall score - RECALIBRATED for actual conditions
-        # 2mm = 0.01, 7mm = 0.035, 10mm = 0.05, 30mm = 0.15, 60mm = 0.30, 100mm = 0.50
-        rainfall_score = min(rainfall_mm / 200, 1.0)
-        
-        # Wind score - RECALIBRATED
-        # 10 km/h = 0.19, 20 km/h = 0.37, 54 km/h (15 m/s) = 1.0
-        wind_kmh = wind_mps * 3.6
-        wind_score = min(wind_kmh / 54, 1.0)
-        
-        # Humidity score - reduced impact (normal in monsoon)
-        # 70% = 0.4, 80% = 0.6, 90% = 0.8, 95%+ = 1.0
-        # But capped lower because high humidity is NORMAL, not dangerous by itself
-        humidity_score = min(max(humidity_pct - 50, 0) / 50, 1.0) * 0.5  # Half impact
-        
-        # Cloud cover score - reduced impact
-        cloud_score = min(cloud_cover_pct / 100, 1.0) * 0.3  # Minimal impact
-        
-        # Weighted average - RAINFALL IS DOMINANT (80% of score)
-        environmental_severity = (
-            0.80 * rainfall_score +     # 80% weight on rainfall
-            0.15 * wind_score +         # 15% weight on wind
-            0.03 * humidity_score +     # 3% weight on humidity (normal in monsoon)
-            0.02 * cloud_score          # 2% weight on cloud cover
+        _, season_scale = get_season_info(month)
+
+        rain_score = _rainfall_score(rainfall_mm)
+        rain_effective = rain_score * season_scale
+
+        wind_score = _clip(wind_mps / 15.0)          # ~gale-warning threshold
+        humidity_score = _clip((humidity_pct - 50.0) / 50.0)  # normal in monsoon
+        cloud_score = _clip(cloud_cover_pct / 100.0)
+
+        severity = (
+            0.78 * rain_effective +
+            0.12 * wind_score +
+            0.06 * humidity_score +
+            0.04 * cloud_score
         )
-        
-        logger.info(f"{self.locality} - Environmental: R={rainfall_score:.2f}, W={wind_score:.2f}, "
-                   f"H={humidity_score:.2f}, C={cloud_score:.2f} → {environmental_severity:.2f}")
-        
-        return min(environmental_severity, 1.0)
-    
-    def calculate_structural_risk(self) -> float:
+
+        logger.info(f"{self.locality} - Environmental: rain={rain_score:.2f}"
+                    f"(x{season_scale:.2f} season), wind={wind_score:.2f}, "
+                    f"hum={humidity_score:.2f}, cloud={cloud_score:.2f} "
+                    f"→ {severity:.2f}")
+        return _clip(severity)
+
+    def calculate_structural_risk(self, rainfall_mm: Optional[float] = None,
+                                  month: Optional[int] = None,
+                                  recent_rain_3d: Optional[float] = None) -> float:
         """
-        Calculate Structural Risk (0-1 normalized)
-        
-        This factor represents POTENTIAL structural vulnerability in worst-case scenarios.
-        It's weather-independent and represents long-term geological/infrastructure risk.
-        
-        Factors:
-        - Terrain slope: Steeper = higher vulnerability to landslides
-        - Soil type: More erodible soils increase risk (fixed for locality)
-        - Historical incidents: Past damage indicates vulnerability pattern
-        - Infrastructure density: More buildings = more damage potential
-        
-        CRITICAL FIX: This should be MUCH LOWER in normal conditions.
-        Only extreme rainfall should activate this risk (rainfall-weighted).
-        
-        Returns: Score 0-1 (0=low risk, 1=extreme risk)
+        Structural risk (0-1): vulnerability of buildings/roads/land to failure.
+
+        This channel is *gated by rainfall*: terrain steepness, soil saturation
+        and the locality's documented incident history only matter while rain is
+        actually falling. In calm weather the score collapses towards zero, so
+        past incidents can never create danger on their own.
+
+        Weighting scheme (documented in docs/METHODOLOGY.md), aligned with
+        NDMA/BIS-style susceptibility zonation where rainfall history and the
+        landslide inventory validate rather than dominate:
+            terrain/slope         40%
+            soil saturation       25%   (seasonal + measured recent rain)
+            population exposure   20%
+            incident history      15%   (decayed register, capped ~0.30)
+
+        Returns: Score 0-1 (0=no active structural risk, 1=extreme risk)
         """
-        
-        # Terrain risk - only baseline
-        terrain_score = self.terrain_risk * 0.3  # Heavily reduced - only potential
-        
-        # Historical incidents factor - minimal baseline
-        historical_score = self.historical_factor * 0.2  # Minimal contribution
-        
-        # Infrastructure exposure
+        rainfall_mm = rainfall_mm if rainfall_mm is not None else 0.0
+        month = month or datetime.now().month
+
+        # Rainfall gate: how much of the locality's vulnerability is "live"?
+        activation = _clip(rainfall_mm / RAIN_ACTIVATION_MM)
+
+        # Soil saturation: monsoon baseline, sharpened by MEASURED recent rain
+        # when the observed-history store has data (dry months stay dry even
+        # inside the monsoon window after a 3-day break).
+        if recent_rain_3d is not None:
+            if month in MONSOON_MONTHS:
+                soil_saturation = _clip(max(0.55, recent_rain_3d / 80.0))
+            else:
+                soil_saturation = _clip(min(0.45, recent_rain_3d / 120.0))
+        else:
+            soil_saturation = 0.9 if month in MONSOON_MONTHS else 0.35
+
         max_population = max(LOCALITY_POPULATION.values())
-        infra_exposure = min(self.population / max_population, 1.0) * 0.2
-        
-        # Soil saturation potential - only relevant during extreme rainfall
-        saturation_potential = 0.15  # Reduced further
-        
-        # Weighted combination - SIGNIFICANTLY reduced from before
-        # This is just baseline vulnerability, not current risk
-        structural_risk = (
-            0.35 * terrain_score +
-            0.25 * historical_score +
-            0.25 * infra_exposure +
-            0.15 * saturation_potential
+        infra_exposure = _clip(self.population / max_population)
+
+        raw_vulnerability = (
+            0.40 * self.terrain_risk +
+            0.25 * soil_saturation +
+            0.20 * infra_exposure +
+            0.15 * self.historical_factor   # incidents amplify, never trigger
         )
-        
-        logger.info(f"{self.locality} - Structural: Terrain={terrain_score:.2f}, "
-                   f"Historical={historical_score:.2f}, Infra={infra_exposure:.2f} → {structural_risk:.2f}")
-        
-        return min(structural_risk, 1.0)
-    
-    def calculate_human_threat_level(self, rainfall_mm: float, population: int = None) -> float:
+
+        risk = raw_vulnerability * activation
+
+        logger.info(f"{self.locality} - Structural: vulnerability={raw_vulnerability:.2f} "
+                    f"x activation={activation:.2f} (hist={self.historical_factor:.2f}, "
+                    f"soil={soil_saturation:.2f}) → {risk:.2f}")
+        return _clip(risk)
+
+    def calculate_human_threat_level(self, rainfall_mm: float,
+                                     population: Optional[int] = None,
+                                     month: Optional[int] = None) -> float:
         """
-        Calculate Human Threat Level (0-1 normalized)
-        
-        With AccuWeather data (rainfall 2-7mm), human threat should be MINIMAL.
-        
-        Factors:
-        - Population exposure: More people at risk = higher threat
-        - Rainfall intensity: Direct danger to life from flooding/landslides
-        - Evacuation capacity: Harder to evacuate in steep areas (fixed for locality)
-        
-        Danger levels for rainfall:
-        - 2-7mm: Safe (0.01-0.035)
-        - 10mm: Low threat (0.067)
-        - 30mm: Moderate threat (0.20)
-        - 60mm: High threat (0.40)
-        - 100mm+: Extreme threat (0.67+)
-        
+        Human threat level (0-1): danger to life and evacuation difficulty.
+
+        Rainfall-driven threat dominates (50%) and is season-scaled. Population
+        exposure (35%) and terrain-based evacuation difficulty (15%) provide a
+        modest, weather-independent floor so densely populated steep areas are
+        never shown as fully risk-free.
+
         Returns: Score 0-1 (0=low threat, 1=extreme threat to life)
         """
-        
         pop = population or self.population
         max_population = max(LOCALITY_POPULATION.values())
-        
-        # Population exposure score - minimal baseline
-        population_score = min(pop / max_population, 1.0) * 0.3
-        
-        # Rainfall-driven threat - DOMINANT FACTOR
-        # 2mm = 0.01, 7mm = 0.035, 10mm = 0.067, 30mm = 0.20, 60mm = 0.40, 100mm = 0.67
-        rainfall_threat = min(rainfall_mm / 150, 1.0)
-        
-        # Evacuation difficulty (terrain-based, harder in steep areas)
-        evacuation_difficulty = self.terrain_risk * 0.2
-        
-        # Combined threat - RAINFALL DOMINATES (80%)
-        human_threat = (
-            0.10 * population_score +
-            0.80 * rainfall_threat +      # 80% on rainfall
-            0.10 * evacuation_difficulty
+        _, season_scale = get_season_info(month)
+
+        rain_threat = _rainfall_score(rainfall_mm) * season_scale
+        population_score = _clip(pop / max_population)
+        evacuation_difficulty = self.terrain_risk
+
+        threat = (
+            0.50 * rain_threat +
+            0.35 * population_score +
+            0.15 * evacuation_difficulty
         )
-        
-        logger.info(f"{self.locality} - Human Threat: Pop={population_score:.2f}, "
-                   f"Rainfall={rainfall_threat:.2f}, Evacuation={evacuation_difficulty:.2f} → {human_threat:.2f}")
-        
-        return min(human_threat, 1.0)
-    
-    def calculate_composite_index(self, environmental_severity: float, 
-                                 structural_risk: float, 
-                                 human_threat_level: float) -> Tuple[str, float]:
+
+        logger.info(f"{self.locality} - Human Threat: rain={rain_threat:.2f}, "
+                    f"pop={population_score:.2f}, evac={evacuation_difficulty:.2f} "
+                    f"→ {threat:.2f}")
+        return _clip(threat)
+
+    def calculate_composite_index(self, environmental_severity: float,
+                                  structural_risk: float,
+                                  human_threat_level: float) -> Tuple[str, float]:
         """
-        Combine three sub-scores into final 4-tier Danger Index
-        
-        NEW TIER THRESHOLDS (for 90-95% accuracy):
-        - Low: 0.0-0.20      (Safe - normal monsoon conditions)
-        - Moderate: 0.20-0.40 (Caution - elevated but manageable)
-        - High: 0.40-0.60     (Risk - active response needed)
-        - Extreme: 0.60-1.0   (Critical danger - evacuation)
-        
-        Weighting (realistic for monsoon risk):
-        - Environmental Severity: 70% (rainfall + wind are main drivers)
-        - Structural Risk: 20% (baseline geological risk)
-        - Human Threat: 10% (population impact)
-        
-        Returns: (tier: 'Low'|'Moderate'|'High'|'Extreme', score: 0-1)
+        Combine the three sub-scores into the final 4-tier Danger Index.
+
+        Environmental severity carries the most weight because weather is the
+        primary driver of monsoon danger in inner Idukki; structural risk and
+        human threat modulate it.
+
+        Tier thresholds:
+            < 0.25  Low · < 0.50 Moderate · < 0.70 High · >= 0.70 Extreme
+
+        Returns: (tier, score)
         """
-        
-        # Weighted composite - ENVIRONMENTAL DOMINATES
         composite_score = (
-            0.70 * environmental_severity +
-            0.20 * structural_risk +
-            0.10 * human_threat_level
+            W_ENV * environmental_severity +
+            W_STRUCT * structural_risk +
+            W_HUMAN * human_threat_level
         )
-        
-        # Map to 4-tier index with NEW THRESHOLDS
-        if composite_score < 0.20:
+
+        if composite_score < T_LOW:
             tier = 'Low'
-        elif composite_score < 0.40:
+        elif composite_score < T_MOD:
             tier = 'Moderate'
-        elif composite_score < 0.60:
+        elif composite_score < T_HIGH:
             tier = 'High'
         else:
             tier = 'Extreme'
-        
+
         logger.info(f"{self.locality} - COMPOSITE INDEX: {tier} ({composite_score:.2f}) "
-                   f"[E={environmental_severity:.2f}, S={structural_risk:.2f}, H={human_threat_level:.2f}]")
-        
+                    f"[E={environmental_severity:.2f}, S={structural_risk:.2f}, "
+                    f"H={human_threat_level:.2f}]")
         return tier, composite_score
-    
+
+    # --------------------------------------------------------------- helpers
     @staticmethod
     def get_tier_color(tier: str) -> str:
         """Return hex color for map rendering"""
         colors = {
             'Low': '#2ecc71',       # Green
-            'Moderate': '#f39c12',  # Orange
-            'High': '#e74c3c',      # Red
-            'Extreme': '#8b0000'    # Dark red
+            'Moderate': '#f5a623',  # Orange
+            'High': '#ff5252',      # Red
+            'Extreme': '#b0102e'    # Deep red
         }
-        return colors.get(tier, '#95a5a6')  # Gray fallback
-    
+        return colors.get(tier, '#8a93a6')
+
     @staticmethod
     def get_tier_description(tier: str) -> str:
         """Return plain-language description for residents"""
         descriptions = {
-            'Low': 'Current risk is LOW. Weather is stable. Roads and buildings are safe. '
-                   'No action needed, but stay alert during monsoon season.',
-            'Moderate': 'Current risk is MODERATE. Heavy rainfall expected. Some areas may be '
-                       'muddy or roads may have minor damage. Avoid unnecessary travel.',
-            'High': 'Current risk is HIGH. Very heavy rainfall and strong winds expected. '
-                   'Landslides and flooding possible in steep areas. Stay indoors, avoid travel. '
-                   'Check emergency hotline for local updates.',
-            'Extreme': 'Current risk is EXTREME. Severe weather with intense rainfall expected. '
-                      'Risk of major landslides, floods, and dam spillway events. STAY INDOORS. '
-                      'Follow evacuation orders. Call emergency (112 or 1077 Kerala).'
+            'Low': 'Current risk is LOW. Weather is calm for the season and '
+                   'normal activity is safe. Stay alert during monsoon season.',
+            'Moderate': 'Current risk is MODERATE. Rainfall is building and '
+                        'some roads may turn slippery. Avoid unnecessary travel '
+                        'during heavy downpours.',
+            'High': 'Current risk is HIGH. Heavy rain is falling or expected. '
+                    'Landslides and flash floods are possible on steep terrain. '
+                    'Stay indoors and avoid non-essential travel.',
+            'Extreme': 'Current risk is EXTREME. Very heavy rain poses an '
+                       'immediate threat to life and property. STAY INDOORS, '
+                       'follow evacuation orders and call 112 / 1077 if in danger.'
         }
         return descriptions.get(tier, 'Unknown risk level')
 
 
-def compute_index_for_locality(locality: str, weather_data: Dict) -> Dict:
-    """
-    End-to-end calculation: weather data → Danger Index
-    
-    Args:
-        locality: Locality name
-        weather_data: Dict with rainfall_mm, wind_mps, humidity_pct, cloud_cover_pct
-    
-    Returns:
-        Dict with tier, score, sub-scores, description, color
-    """
-    
+# ---------------------------------------------------------------------------
+# Public pipeline functions
+# ---------------------------------------------------------------------------
+
+def _build_drivers(locality: str, rainfall_mm: float, season: str,
+                   source: str, rainfall_score: float) -> List[str]:
+    """Short, plain-language reasons shown in the UI ('why is it this level')."""
+    drivers: List[str] = []
+
+    if rainfall_mm >= 115.5:
+        drivers.append('Very heavy rain (>115 mm/day) — slope & stream hazards active')
+    elif rainfall_mm >= 64.5:
+        drivers.append('Heavy rain (>64 mm/day) — IMD "heavy rain" category')
+    elif rainfall_mm >= 35.5 and season == 'monsoon':
+        drivers.append('Sustained monsoon rain in the forecast')
+    elif rainfall_mm >= 35.5:
+        drivers.append('Unseasonal rain — treat with monsoon-level caution')
+    elif season != 'monsoon':
+        drivers.append('Dry season — danger only from outlier storms')
+    else:
+        drivers.append('Monsoon in progress — monitor daily updates')
+
+    if season == 'monsoon' and TERRAIN_SLOPE_RISK.get(locality, 0) >= 0.75:
+        drivers.append('Steep terrain + wet soils raise landslide potential')
+    elif rainfall_score >= 0.5:
+        drivers.append('Heavy rain on historically sensitive terrain')
+
+    if source == 'synthetic':
+        drivers.append('Showing modelled data — live feed unavailable')
+
+    return drivers[:3]
+
+
+def _evaluate_weather(locality: str, rainfall_mm: float, wind_mps: float,
+                      humidity_pct: float, cloud_cover_pct: float,
+                      source: str, observed_at=None) -> Dict:
+    """Core scoring shared by the live index and the 7-day danger outlook."""
     calc = DangerIndexCalculator(locality)
-    
-    # Extract weather (with safe defaults)
-    rainfall_mm = weather_data.get('rainfall_mm', 100)
-    wind_mps = weather_data.get('wind_mps', 8)
-    humidity_pct = weather_data.get('humidity_pct', 85)
-    cloud_cover_pct = weather_data.get('cloud_cover_pct', 80)
-    
-    # Calculate sub-scores
-    env_severity = calc.calculate_environmental_severity(rainfall_mm, wind_mps, 
-                                                         humidity_pct, cloud_cover_pct)
-    struct_risk = calc.calculate_structural_risk()
+    season, _ = get_season_info()
+
+    # Live scores use measured recent rain for soil saturation; forecast-day
+    # scoring keeps the seasonal baseline (rainfall days ahead are not yet
+    # measured, so the outlook behaves exactly as before).
+    recent_3d = (_observed_recent_rain_3d(locality, rainfall_mm)
+                 if source != 'forecast' else None)
+
+    env_severity = calc.calculate_environmental_severity(
+        rainfall_mm, wind_mps, humidity_pct, cloud_cover_pct)
+    struct_risk = calc.calculate_structural_risk(
+        rainfall_mm, recent_rain_3d=recent_3d)
     human_threat = calc.calculate_human_threat_level(rainfall_mm)
-    
-    # Get composite index
     tier, score = calc.calculate_composite_index(env_severity, struct_risk, human_threat)
-    
+    rain_score = _rainfall_score(rainfall_mm)
+
     return {
         'locality': locality,
         'tier': tier,
@@ -306,21 +470,200 @@ def compute_index_for_locality(locality: str, weather_data: Dict) -> Dict:
         'human_threat': round(human_threat, 2),
         'color': DangerIndexCalculator.get_tier_color(tier),
         'description': DangerIndexCalculator.get_tier_description(tier),
+        'drivers': _build_drivers(locality, rainfall_mm, season, source, rain_score),
+        'season': season,
+        'data_source': source,
+        'observed_at': observed_at,
+        'weather': {
+            'rainfall_mm': round(float(rainfall_mm), 1),
+            'wind_mps': round(float(wind_mps), 1),
+            'humidity_pct': round(float(humidity_pct), 1),
+            'cloud_cover_pct': round(float(cloud_cover_pct), 1),
+        },
         'timestamp': pd.Timestamp.now().isoformat()
     }
 
 
-if __name__ == '__main__':
-    # Test with sample data
-    test_data = {
-        'rainfall_mm': 150,
-        'wind_mps': 12,
-        'humidity_pct': 90,
-        'cloud_cover_pct': 95
+def compute_index_for_locality(locality: str, weather_data: Dict) -> Dict:
+    """
+    End-to-end calculation: current weather data → today's Danger Index.
+
+    Args:
+        locality: Locality name
+        weather_data: Dict with rainfall_mm, wind_mps, humidity_pct,
+                      cloud_cover_pct (plus optional source/observed_at)
+
+    Returns:
+        Dict with tier, score, sub-scores, drivers, season, data source,
+        description and color.
+    """
+    rainfall_mm = weather_data.get('rainfall_mm', 0.0)
+    wind_mps = weather_data.get('wind_mps', 0.0)
+    humidity_pct = weather_data.get('humidity_pct', 60.0)
+    cloud_cover_pct = weather_data.get('cloud_cover_pct', 40.0)
+    source = weather_data.get('source', 'synthetic')
+    observed_at = weather_data.get('observed_at')
+    res = _evaluate_weather(locality, rainfall_mm, wind_mps, humidity_pct,
+                            cloud_cover_pct, source, observed_at)
+
+    # metadata consumed by the API/UI (not part of the risk maths)
+    res['conditions_provider'] = weather_data.get('conditions_provider', 'synthetic')
+    res['population'] = LOCALITY_POPULATION.get(locality, 0)
+    try:
+        from index.wards import _load_structure
+        res['ward_count'] = len(_load_structure().get(locality, {}).get('wards', []))
+    except Exception:  # noqa: BLE001 - cosmetic metadata only
+        res['ward_count'] = 0
+    temp = weather_data.get('temperature_c')
+    if temp is not None:
+        res['weather']['temperature_c'] = round(float(temp), 1)
+    return res
+
+
+def compute_forecast_outlook(locality: str, forecast_df, days: int = 7,
+                             context_weather: Optional[Dict] = None) -> Dict:
+    """
+    7-day-ahead danger forecast for a locality.
+
+    Runs the SAME danger-index model as the live feed, once per forecast day,
+    using that day's forecast rainfall (Open-Meteo). Wind/humidity/cloud are
+    not predictable a week out, so future days reuse the latest observation
+    (or season-typical values) - rainfall dominates the score anyway, and it
+    gates structural (landslide) risk.
+
+    Returns:
+        {"locality", "source", "season", "note", "days": [...]}
+        where each day has date, day_offset, rainfall_mm, probability_pct,
+        tier, composite_score, color, description, drivers.
+    """
+    ctx = context_weather or {}
+    wind = ctx.get('wind_mps', 0.0)
+    humidity = ctx.get('humidity_pct', 60.0)
+    cloud = ctx.get('cloud_cover_pct', 40.0)
+
+    season, _ = get_season_info()
+    days_out: List[Dict] = []
+    worst = None
+    worst_score = -1.0
+
+    df = forecast_df.head(days)
+    for offset, (_, row) in enumerate(df.iterrows()):
+        rain = float(row.get('rainfall_mm', 0.0) or 0.0)
+        prob = row.get('probability_pct')
+        prob = None if prob is None or pd.isna(prob) else float(prob)
+
+        res = _evaluate_weather(locality, rain, wind, humidity, cloud,
+                                source='forecast', observed_at=None)
+        drivers = res['drivers']
+        if prob is not None and prob >= 55.0:
+            drivers.append(f'~{int(round(prob))}% chance of rain this day')
+
+        day = {
+            'date': pd.Timestamp(row['date']).strftime('%Y-%m-%d'),
+            'day_offset': offset,
+            'rainfall_mm': round(rain, 1),
+            'probability_pct': prob,
+            'tier': res['tier'],
+            'composite_score': res['composite_score'],
+            'color': res['color'],
+            'description': res['description'],
+            'drivers': drivers[:4],
+            'environmental_severity': res['environmental_severity'],
+            'structural_risk': res['structural_risk'],
+            'human_threat': res['human_threat'],
+        }
+        days_out.append(day)
+        if res['composite_score'] > worst_score:
+            worst, worst_score = day, res['composite_score']
+
+    return {
+        'locality': locality,
+        'source': forecast_df.attrs.get('source', 'forecast') if hasattr(forecast_df, 'attrs') else 'forecast',
+        'season': season,
+        'note': 'Danger tier per day from the 7-day rainfall forecast. '
+                'Wind/humidity/cloud follow the latest observation.',
+        'worst_day': worst,
+        'days': days_out,
     }
-    
-    for locality in ['Kumily', 'Peermedu', 'Idukki']:
-        result = compute_index_for_locality(locality, test_data)
-        print(f"\n{result['locality']}: {result['tier']}")
-        print(f"  Composite Score: {result['composite_score']}")
-        print(f"  Description: {result['description'][:80]}...")
+
+
+def compute_all_locality_indices() -> Tuple[Dict, Optional[pd.DataFrame]]:
+    """
+    Fetch data and compute the Danger Index for every monitored locality.
+
+    Single shared entry point used by the API server, the map view and other
+    callers, so the fetch -> extract -> compute pipeline is defined exactly
+    once.
+
+    Returns:
+        (indices, incidents_df): dict of {locality: index_result} plus the
+        historical-incidents DataFrame (from the first locality's data). The
+        DataFrame is None if no locality could be fetched at all.
+    """
+    from data.fetcher import LOCALITIES, fetch_all_data_for_locality, extract_current_weather
+
+    indices: Dict[str, Dict] = {}
+    incidents_df: Optional[pd.DataFrame] = None
+
+    for locality in LOCALITIES.keys():
+        try:
+            data = fetch_all_data_for_locality(locality)
+            weather_data = extract_current_weather(data)
+            result = compute_index_for_locality(locality, weather_data)
+            result['latitude'] = LOCALITIES[locality]['lat']
+            result['longitude'] = LOCALITIES[locality]['lon']
+            indices[locality] = result
+
+            if incidents_df is None and data.get('historical_incidents') is not None:
+                incidents_df = data['historical_incidents']
+
+        except Exception as e:
+            logger.error(f"Error computing index for {locality}: {e}")
+            # Safe default so one bad locality never takes down the whole map/API
+            indices[locality] = {
+                'locality': locality,
+                'tier': 'Moderate',
+                'composite_score': 0.45,
+                'environmental_severity': 0.4,
+                'structural_risk': 0.45,
+                'human_threat': 0.45,
+                'color': '#f5a623',
+                'description': 'Unable to fetch data; showing default risk level.',
+                'drivers': ['Data temporarily unavailable — default level shown'],
+                'season': get_season_info()[0],
+                'data_source': 'synthetic',
+                'conditions_provider': 'synthetic',
+                'population': LOCALITY_POPULATION.get(locality, 0),
+                'ward_count': 0,
+                'observed_at': None,
+                'weather': {
+                    'rainfall_mm': None,
+                    'wind_mps': None,
+                    'humidity_pct': None,
+                    'cloud_cover_pct': None,
+                    'temperature_c': None,
+                },
+                'timestamp': pd.Timestamp.now().isoformat(),
+                'latitude': LOCALITIES[locality]['lat'],
+                'longitude': LOCALITIES[locality]['lon'],
+            }
+
+    return indices, incidents_df
+
+
+if __name__ == '__main__':
+    # Test with representative scenarios (monsoon month = August)
+    scenarios = [
+        ('Dry-season calm', {'rainfall_mm': 2, 'wind_mps': 3, 'humidity_pct': 55, 'cloud_cover_pct': 20}),
+        ('Monsoon light', {'rainfall_mm': 15, 'wind_mps': 4, 'humidity_pct': 80, 'cloud_cover_pct': 70}),
+        ('Monsoon moderate', {'rainfall_mm': 45, 'wind_mps': 6, 'humidity_pct': 88, 'cloud_cover_pct': 90}),
+        ('Monsoon heavy', {'rainfall_mm': 100, 'wind_mps': 8, 'humidity_pct': 92, 'cloud_cover_pct': 95}),
+        ('Very heavy', {'rainfall_mm': 180, 'wind_mps': 11, 'humidity_pct': 95, 'cloud_cover_pct': 100}),
+        ('Catastrophic', {'rainfall_mm': 280, 'wind_mps': 14, 'humidity_pct': 98, 'cloud_cover_pct': 100}),
+    ]
+
+    for label, w in scenarios:
+        result = compute_index_for_locality('Kumily', w)
+        print(f"{label:20} → {result['tier']:9} score={result['composite_score']:.2f} "
+              f"[E={result['environmental_severity']:.2f} S={result['structural_risk']:.2f} "
+              f"H={result['human_threat']:.2f}]")

@@ -12,7 +12,7 @@ The **Idukki Monsoon Danger Index** is a complete, working hyperlocal monsoon fo
 - ✅ **Forecast Engine:** Data fetchers for IMD, NASA, KSDMA (public sources)
 - ✅ **Composite Index:** 3-sub-score methodology with 4-tier classification
 - ✅ **Interactive Map:** Folium-based visualization with incident overlay
-- ✅ **Resident App:** Streamlit web interface (plain-language, no jargon)
+- ✅ **Dashboard UI:** HTML/CSS/JS interface served by the API (plain-language, no jargon)
 - ✅ **REST API:** FastAPI backend for government integration
 - ✅ **Complete Documentation:** Methodology, API reference, data access guide
 
@@ -23,7 +23,7 @@ The **Idukki Monsoon Danger Index** is a complete, working hyperlocal monsoon fo
 ### Components
 
 ```
-/SSR_system/
+/idukki-danger-index/
 ├── /data/
 │   └── fetcher.py                 # IMD, NASA, KSDMA data fetchers
 │
@@ -35,7 +35,7 @@ The **Idukki Monsoon Danger Index** is a complete, working hyperlocal monsoon fo
 │   └── server.py                  # FastAPI REST backend
 │
 ├── /frontend/
-│   └── app.py                     # Streamlit resident web app
+│   └── /static/                   # Dashboard UI (HTML/CSS/JS)
 │
 ├── /docs/
 │   ├── METHODOLOGY.md             # Index formulas, data rationale
@@ -147,10 +147,10 @@ result = compute_index_for_locality('Kumily', weather_data)
 - `GET /incidents` — Historical incidents
 - `GET /summary` — Statistics
 
-### 5. Frontend App (`frontend/app.py`)
+### 5. Dashboard UI (`frontend/static/`)
 
-**Framework:** Streamlit  
-**Port:** 8501
+**Framework:** HTML/CSS/JS dashboard served by the FastAPI server  
+**URL:** http://localhost:8000/
 
 **Features:**
 - Locality selector
@@ -196,15 +196,15 @@ result = compute_index_for_locality('Kumily', weather_data)
 ### Quick Start (Residents)
 
 ```bash
-cd /home/homie/Projects/SSR_system
+cd idukki-danger-index
 ./quick-start.sh  # Interactive menu
 ```
 
-### Run Resident App
+### Run the Dashboard
 
 ```bash
-streamlit run frontend/app.py
-# Opens at http://localhost:8501
+python3 api/server.py
+# Opens at http://localhost:8000
 ```
 
 **Features:**
@@ -313,7 +313,7 @@ Average Danger Score: 0.72
 | Composite Danger Index | ✅ | `index/calculator.py` |
 | Colour-Coded Map | ✅ | `index/map_generator.py` |
 | Historical Overlay | ✅ | KSDMA incidents in map & API |
-| Resident Interface | ✅ | `frontend/app.py` (Streamlit) |
+| Resident Interface | ✅ | `frontend/static/` dashboard |
 | Plain-Language Output | ✅ | Tier descriptions, guidance |
 | REST API | ✅ | `api/server.py` (FastAPI) |
 | Public Data Sources | ✅ | IMD, NASA, KSDMA, Census |
@@ -327,7 +327,7 @@ Average Danger Score: 0.72
 - ✅ Complete end-to-end pipeline
 - ✅ All modules tested and working
 - ✅ API with Swagger/ReDoc docs
-- ✅ Streamlit UI fully functional
+- ✅ Dashboard UI fully functional
 - ✅ Comprehensive documentation
 
 ### What Needs Setup Before Production
@@ -397,16 +397,32 @@ Average Danger Score: 0.72
 
 ---
 
-## Future Enhancements (Not Scope for This Week)
+## Future Enhancements
 
-1. **Machine Learning:** Train on 10+ years of incident data to improve weighting
-2. **Ensemble Forecasts:** Combine IMD, ECMWF, GFS forecasts
-3. **Microzonation:** Sub-panchayat risk (ward-level)
-4. **Offline Mode:** Mobile app with cached forecasts
-5. **Multi-Language:** Tamil, Malayalam, Kannada translations
-6. **SMS/WhatsApp:** Automated alerts (integrate with Twilio)
-7. **Satellite Integration:** Real-time MODIS/Sentinel monitoring
-8. **Historical Trend Analysis:** Show year-on-year patterns
+**Now shipped (v1.2):**
+
+1. **Machine Learning suite** (`ml/`) — per-locality LSTM rainfall forecaster,
+   ridge baseline and logistic hazard classifier trained on the 2012–2025
+   Open-Meteo/ERA5 record (pure NumPy). Exposed as `/ml` and in the UI as the
+   "AI 24-hour outlook".
+2. **Seasonal outlook** (`outlook/`) — ENSO phase from the NOAA CPC ONI and a
+   per-locality lightning-risk climatology; `/outlook`.
+3. **Administrator reports** (`reporting/`) — downloadable PDF/DOCX seasonal
+   risk reports via `/report`, per locality or district-wide.
+4. **Proposal tracker** — see `docs/PROPOSAL_COVERAGE.md` for what of the
+   SSR proposal remains unbuilt (real IMD/NASA/KSDMA registers, flood
+   inundation, road-accessibility/evacuation graph, ward-level
+   microzonation, live lightning feed).
+
+**Still on the roadmap:**
+
+1. Ensemble forecasts (IMD, ECMWF, GFS)
+2. Microzonation: sub-panchayat risk (ward-level)
+3. Offline mode: mobile app with cached forecasts
+4. Multi-language: Tamil, Malayalam, Kannada translations
+5. SMS/WhatsApp automated alerts (Twilio)
+6. Real-time MODIS/Sentinel monitoring
+7. Year-on-year historical trend analysis
 
 ---
 
@@ -425,7 +441,7 @@ The **Idukki Monsoon Danger Index** is production-ready for:
 
 ## Repository Info
 
-- **Location:** `/home/homie/Projects/SSR_system`
+- **Location:** Local clone of `https://github.com/karthikjash/idukki-danger-index`
 - **Git History:** 2 commits (initial + docs)
 - **Dependencies:** 15 Python packages (all pinned in requirements.txt)
 - **License:** [To be determined]

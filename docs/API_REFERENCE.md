@@ -17,7 +17,7 @@ The Idukki Monsoon Danger Index API is a RESTful service built with FastAPI that
 ### Start the API Server
 
 ```bash
-cd /home/homie/Projects/SSR_system
+cd idukki-danger-index
 python3 api/server.py
 ```
 
@@ -121,7 +121,7 @@ GET /index
       "structural_risk": 0.83,
       "human_threat_level": 0.60
     },
-    "color": "#e74c3c",
+    "color": "#ff5252",
     "description": "Current risk is HIGH. Very heavy rainfall and strong winds expected...",
     "timestamp": "2026-09-01T21:57:00.123456",
     "latitude": 9.655,
@@ -164,7 +164,7 @@ GET /index/{locality}
     "structural_risk": 0.83,
     "human_threat_level": 0.60
   },
-  "color": "#e74c3c",
+  "color": "#ff5252",
   "description": "Current risk is HIGH...",
   "timestamp": "2026-09-01T21:57:00.123456",
   "latitude": 9.655,
@@ -302,6 +302,56 @@ curl http://localhost:8000/summary | jq '.tier_breakdown.Extreme'
 # Get average score
 curl http://localhost:8000/summary | jq '.average_danger_score'
 ```
+
+### 9. 7-Day Danger Outlook (`/danger-forecast/{locality}`)
+
+Runs the same Danger Index model once per forecast day, using each day's
+forecast rainfall (Open-Meteo), so a rising tier is visible days in advance:
+
+```bash
+curl http://localhost:8000/danger-forecast/Kumily | jq '.days[] | "\(.date) \(.tier) \(.composite_score) \(.rainfall_mm)mm"'
+```
+
+Each day carries `rainfall_mm`, `probability_pct` (chance of rain), `tier`,
+`composite_score`, `color`, `description` and `drivers`; the response also
+lists the `worst_day` in the window. Wind/humidity/cloud follow the latest
+observation (rainfall is the dominant, gating input).
+
+### 10. ML Outlook (`/ml`)
+
+Returns the trained-model next-24h rainfall estimate and heavy-rain
+probability for every locality, plus out-of-sample evaluation metrics.
+
+```bash
+curl http://localhost:8000/ml | jq '.models[0]'
+# => { locality: "Kumily", status: "ready", lstm_mm: 2.4, ridge_mm: 3.1,
+#      ml_rain_mm: 2.8, heavy_rain_pct: 1.2, generated_at: "..." }
+```
+
+`status` is `ready` once `ml/models/` contains trained artifacts; otherwise
+`training` (the server trains automatically on first boot, or run
+`python3 ml/train.py`).
+
+### 11. Seasonal Outlook (`/outlook`)
+
+ENSO phase (NOAA CPC ONI) with plain-language monsoon guidance, plus a
+per-locality lightning-risk tier (climatological model).
+
+```bash
+curl http://localhost:8000/outlook | jq '.enso.phase'
+curl http://localhost:8000/outlook | jq '.lightning.Kumily.tier'
+```
+
+### 12. Seasonal Risk Report (`/report`)
+
+Administrator-ready report as PDF or DOCX for one locality or the district:
+
+```bash
+curl -OJ "http://localhost:8000/report?locality=Kumily&format=pdf"
+curl -OJ "http://localhost:8000/report?locality=all&format=docx"
+```
+
+`locality` defaults to `all`; `format` defaults to `pdf`.
 
 ---
 
@@ -520,8 +570,136 @@ curl http://localhost:8000/index | jq '.[] | {locality: .locality, tier: .tier}'
 - **Code:** `/api/server.py`
 - **Configuration:** See `index/calculator.py` for weighting and threshold tuning
 
+## Ward-level exposure
+
+### `GET /wards/{locality}`
+
+Ward micro-zones for one panchayat.
+
+```json
+{
+  "locality": "Kumily",
+  "panchayat_population": 33722,
+  "ward_count": 20,
+  "structure_source": "LSG Kerala Election-2020 (...)",
+  "population_model": "apportioned estimate (equal share)",
+  "top_ward": { "ward_no": 4, "ward_name": "PATHUMURY", "population": 1686,
+                "incidents_nearby": 5, "score": 0.12, "tier": "Low" },
+  "wards": [ { "ward_no": 1, "ward_name": "ETTEKKAR", "population": 1686,
+                "population_share_pct": 5.0, "latitude": 9.65, "longitude": 76.77,
+                "incidents_nearby": 3, "sensitivity": 0.03, "score": 0.12,
+                "tier": "Low", "color": "#2fdd8f" } ]
+}
+```
+
+Ward score = panchayat live danger score lifted by each ward's
+severity/recency-weighted recorded-incident sensitivity. Populations are
+apportioned from the authoritative panchayat total until a Census-2011 ward
+table is dropped into `data/static/wards_overrides.csv`.
+
+## Per-locality weather trends (charts)
+
+### `GET /trends/{locality}`
+
+Three chart series with per-series provider tags:
+
+```json
+{
+  "locality": "Kumily",
+  "providers": { "current": "openweathermap", "rain_outlook": "openweathermap",
+                  "observed_30d": "open-meteo measured", "hourly_48h": "openweathermap" },
+  "rain_outlook":  { "provider": "openweathermap", "today_partial": true,
+                      "days": [ {"date": "2026-09-03", "rain_mm": 2.2, "pop_pct": 100} ] },
+  "observed_30d":  { "provider": "open-meteo measured",
+                      "days": [ {"date": "2026-08-05", "rain_mm": 12.4,
+                                  "wind_max_mps": 6.2, "humidity_mean_pct": 88} ] },
+  "hourly_48h":    { "provider": "openweathermap", "step_hours": 3,
+                      "hours": [ {"time": "2026-09-03T15:00", "temp_c": 24.1,
+                                    "humidity_pct": 88, "wind_mps": 2.9, "pop_pct": 100} ] }
+}
+```
+
+- `rain_outlook` — OpenWeatherMap 5-day/3-hour aggregated to IST days when a
+  key is set (day-0 is partial and flagged), else Open-Meteo 7-day.
+- `observed_30d` — Open-Meteo measured `past_days` (OWM free tier has no
+  history API).
+- `hourly_48h` — OpenWeatherMap 3-hour steps when a key is set, else
+  Open-Meteo hourly.
+
+## Enriched response fields
+
+- `GET /localities` now returns a `meta` map per locality:
+  `{population, ward_count, lsg, structure_source, coordinates}`.
+- Every `GET /index` item carries `population`, `ward_count`,
+  `conditions_provider` (`openweathermap` / `open-meteo` / `synthetic`) and
+  `weather.temperature_c`.
+- `GET /ml` model objects include the calibrated decision `threshold` and a
+  boolean `heavy_alert` (probability above the threshold tuned for ≥90%
+  recall of heavy-rain windows). Full confusion matrices and per-locality
+  out-of-sample recall/precision live in `ml/models/eval.json`.
+
+## SMS alert subscriptions (`/notify/*`)
+
+Residents register a mobile number and choose what to receive. Delivery is
+real SMS when a gateway key is in `.env` (Fast2SMS or Twilio — see
+`.env.example`); otherwise the app runs in **demo mode** and every message
+is recorded to `data/notifications/outbox.jsonl` and returned as a preview.
+A background scheduler (`notify/scheduler.py`) evaluates subscriptions every
+60 s — danger alerts as thresholds are crossed (max once per area per day),
+a 07:00 IST daily briefing, and a Monday 08:00 IST weekly outlook.
+
+### GET /notify/status
+```bash
+curl http://localhost:8000/notify/status
+```
+Returns `{demo, provider, note, subscriptions, plan_counts, messages_sent}`.
+`provider` is `twilio`, `fast2sms` or `demo`.
+
+### POST /notify/subscribe
+```bash
+curl -X POST http://localhost:8000/notify/subscribe -H 'Content-Type: application/json' -d '{
+  "phone": "+919876543210", "lang": "ml",
+  "localities": ["Kumily", "Munnar"],
+  "threshold": "High", "plans": ["danger", "daily", "weekly"]
+}'
+```
+`phone` is validated as a 10-digit Indian number (`+91` E.164 stored);
+`lang` is `en` or `ml`; `threshold` is `High` (default) or `Extreme`;
+`plans` is any subset of `danger` / `daily` / `weekly`. Returns the stored
+subscription plus the (demo-previewable) welcome message.
+
+### GET /notify/subscribe
+```bash
+curl "http://localhost:8000/notify/subscribe?phone=9876543210"
+```
+Returns the stored subscription for pre-filling the form, or 404.
+
+### DELETE /notify/subscribe
+```bash
+curl -X DELETE http://localhost:8000/notify/subscribe \
+  -H 'Content-Type: application/json' -d '{"phone": "+919876543210"}'
+```
+Removes the subscription.
+
+### POST /notify/test
+```bash
+curl -X POST http://localhost:8000/notify/test \
+  -H 'Content-Type: application/json' -d '{"phone": "9876543210", "lang": "en"}'
+```
+Sends a test SMS immediately; in demo mode returns the full message preview
+that would have been delivered.
+
+### GET /notify/messages
+```bash
+curl "http://localhost:8000/notify/messages?phone=9876543210&limit=10"
+```
+Recent outbox entries (audit trail) for one number, newest first.
+
+Subscriptions are stored in `data/subscriptions.json` (git-ignored, contains
+personal phone numbers).
+
 ---
 
-**API Version:** 1.0  
+**API Version:** 1.3  
 **Last Updated:** September 2026  
 **Framework:** FastAPI / Uvicorn

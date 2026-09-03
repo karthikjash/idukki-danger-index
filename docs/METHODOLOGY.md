@@ -41,25 +41,51 @@ The system aggregates gridded rainfall, wind, humidity, and cloud data from publ
 
 ### Index Composition
 
-The **Composite Danger Index** combines three independent sub-scores:
+The **Composite Danger Index** combines three sub-scores:
 
 | Sub-Score | Weight | Definition | Range |
 |-----------|--------|------------|-------|
-| **Environmental Severity** | 40% | Rainfall intensity, wind speed, humidity, cloud cover | 0–1 |
-| **Structural Risk** | 35% | Terrain slope, soil saturation, historical damage patterns | 0–1 |
-| **Human Threat Level** | 25% | Population exposure, evacuation difficulty | 0–1 |
+| **Environmental Severity** | 60% | Rainfall (IMD 24h categories), wind, humidity, cloud cover | 0–1 |
+| **Structural Risk** | 25% | Terrain, soil saturation, historical patterns — **rainfall-gated** | 0–1 |
+| **Human Threat Level** | 15% | Population exposure, rainfall-driven danger, evacuation | 0–1 |
 
 ### Calculation Formula
 
 ```
-Composite Score = (0.40 × Env. Severity) + (0.35 × Struct. Risk) + (0.25 × Human Threat)
+Composite Score = (0.60 × Env. Severity) + (0.25 × Struct. Risk) + (0.15 × Human Threat)
 
 Tier Assignment:
   Score < 0.25   →  "Low"
   0.25 ≤ Score < 0.50  →  "Moderate"
-  0.50 ≤ Score < 0.75  →  "High"
-  Score ≥ 0.75   →  "Extreme"
+  0.50 ≤ Score < 0.70  →  "High"
+  Score ≥ 0.70   →  "Extreme"
 ```
+
+### Seasonality (v1.1) — why most of Idukki shows LOW most of the year
+
+The district's real danger window is the **south-west monsoon (June–September)**.
+To reflect that:
+
+1. **Rainfall is scored against the IMD 24-hour categories** (light / moderate /
+   rather heavy / heavy / very heavy / extremely heavy), not against a single
+   observed day's value.
+2. **Season scaling** — rainfall-driven danger is multiplied by a monthly
+   factor (1.0 during the monsoon, ~0.6 in May/October transition months,
+   0.25–0.35 in the dry season). The same 40 mm day is therefore a "Moderate"
+   monsoon day but a non-event in January.
+3. **Structural risk is rainfall-gated.** Terrain steepness, soil saturation
+   and historical incident density only contribute while rain is actually
+   falling (`activation = min(rainfall / 150 mm, 1)`). Past incidents alone can
+   never raise the tier — they amplify risk only during wet weather.
+
+This removes the earlier over-fit in which scoring was calibrated to a single
+observed day and localities looked at risk purely because incidents had
+happened there in past monsoons.
+
+> Authoritative constants live at the top of `index/calculator.py`
+> (`RAIN_KNOTS`, `SEASON_SCALE`, `W_ENV`/`W_STRUCT`/`W_HUMAN`,
+> `T_LOW`/`T_MOD`/`T_HIGH`, `RAIN_ACTIVATION_MM`). Sub-score details below
+> describe the design and may lag minor value changes.
 
 ### Sub-Score Definitions
 
@@ -96,7 +122,7 @@ Tier Assignment:
 ### Directory Structure
 
 ```
-/SSR_system/
+/idukki-danger-index/
 ├── /data/
 │   └── fetcher.py              # IMD, NASA, KSDMA data ingestion
 ├── /index/
@@ -105,7 +131,7 @@ Tier Assignment:
 ├── /api/
 │   └── server.py               # FastAPI REST backend
 ├── /frontend/
-│   └── app.py                  # Streamlit resident UI
+│   └── /static/                # Dashboard UI (HTML/CSS/JS)
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # Quick start guide
 └── /docs/
@@ -142,9 +168,9 @@ data = fetch_all_data_for_locality('Kumily')
 
 **Tier Colors:**
 - 🟢 Low: `#2ecc71`
-- 🟠 Moderate: `#f39c12`
-- 🔴 High: `#e74c3c`
-- 🔴 Extreme: `#8b0000`
+- 🟠 Moderate: `#f5a623`
+- 🔴 High: `#ff5252`
+- 🔴 Extreme: `#b0102e`
 
 #### 3. `index/map_generator.py`
 **Purpose:** Generate interactive Folium map with zones and incident overlay
@@ -174,8 +200,8 @@ generate_danger_map(
 - `GET /incidents` — Historical incidents (GeoJSON-ready)
 - `GET /summary` — Tier breakdown statistics
 
-#### 5. `frontend/app.py`
-**Purpose:** Streamlit web app for resident-facing interface
+#### 5. Dashboard UI (`frontend/static/`)
+**Purpose:** HTML/CSS/JS dashboard served by the API at `/`
 
 **Features:**
 - Locality selector (dropdown)
@@ -282,14 +308,14 @@ generate_danger_map(
 
 ## How to Use (Residents)
 
-1. **Open the app:** `streamlit run frontend/app.py`
-2. **Select your panchayat** from the dropdown
+1. **Open the app:** `python3 api/server.py` and visit http://localhost:8000
+2. **See the district overview**, then tap any locality card
 3. **Read the current Danger Level** in plain language
-4. **Check the sub-scores** to understand drivers (rainfall, terrain, people)
+4. **Check the sub-scores** to understand drivers (weather, terrain, people)
 5. **Follow the "What to do" guidance** for your tier
 6. **Check nearby past incidents** to understand local hazards
-7. **View the map** to see risk across inner Idukki
-8. **Call for help** if you see emergency: **112** or **1077**
+7. **View the map** tab to see risk across inner Idukki
+8. **Call for help** if you see an emergency: **112** or **1077**
 
 ---
 
@@ -310,10 +336,143 @@ generate_danger_map(
 - **NASA EarthData:** https://earthdata.nasa.gov
 - **Census of India 2021:** https://censusindia.gov.in
 - **Folium Documentation:** https://python-visualization.github.io/folium
-- **Streamlit Documentation:** https://docs.streamlit.io
+- **FastAPI Documentation:** https://fastapi.tiangolo.com
 
 ---
 
-**Document Version:** 1.0  
+## ML Prediction Engine & Seasonal Outlook (v1.2)
+
+### ML suite (`ml/`, pure NumPy)
+
+Every locality gets its own small models, trained on the Open-Meteo/ERA5
+historical rainfall record (2012 → yesterday, ~5,300 days per locality):
+
+- **LSTM rainfall forecaster** — one hidden layer (10 units), 30-day causal
+  input window of [rain, 3/7-day accumulation, day-of-year sine/cosine],
+  Adam + truncated BPTT, predicts next-day rainfall (mm).
+- **Ridge baseline** — closed-form ridge regression over the same engineered
+  features (rolling accumulations 3/7/15/30-day, wet-streak, dryness count,
+  seasonal dummies) for comparison.
+- **Hazard classifier** — logistic regression (L2, mini-batch GD) over the
+  features predicting P(rain ≥ 100 mm tomorrow), evaluated by ROC-AUC and
+  top-decile precision rather than accuracy (positive class ≈ 1–3% of days).
+
+Training is **chronologically split**: 2012–2019 train, 2020+ held out — so
+the evaluation window overlaps the 2020–25 recorded incident era and the
+metrics in `ml/models/eval.json` are honest out-of-sample numbers.
+
+> Why pure NumPy? So the entire AI suite installs and runs with only
+> `numpy + pandas`. The proposal's TensorFlow/scikit-learn stack can replace
+> `ml/models.py` without changing any caller (same `fit/predict/save/load`
+> surface).
+
+### Seasonal outlook (`outlook/`)
+
+- **ENSO (El Niño/La Niña)** — parsed from the vendored NOAA CPC Oceanic Niño
+  Index table; surfaced as season-level context (weaker SW monsoon during El
+  Niño, stronger NE monsoon during La Niña). Advisory only — ENSO is not a
+  direct input to the daily Danger Index.
+- **Lightning** — climatological risk per locality from Kerala's monthly
+  strike curve (pre-monsoon Apr–May peak, NE-monsoon Oct–Nov secondary),
+  scaled by highland exposure. Clearly labelled as a climatology model;
+  a live strike feed can be added behind the same API shape.
+
+### Administrator reports (`reporting/`)
+
+`GET /report` renders the district or per-locality risk position — headline
+tier, sub-scores, weather, drivers, incidents and seasonal context — as a
+printable PDF (fpdf2) or DOCX (stdlib OOXML writer, no lxml dependency), for
+submission to the District Collector / KSDMA.
+
+### 7-day danger outlook (`GET /danger-forecast/{locality}`)
+
+The live Danger Index answers "what is the risk NOW". The outlook answers
+"is danger coming this week": the SAME scoring model (60/25/15 weights,
+IMD rainfall bands, rainfall-gated structural risk, season scale) is run once
+per forecast day on that day's Open-Meteo rainfall and chance-of-rain
+probability. A day that reaches Moderate/High/Extreme is therefore visible
+3–5 days before it arrives, along with its drivers (e.g. "heavy rain on
+historically sensitive terrain"). Wind/humidity/cloud for future days follow
+the latest observation, since those are not predictable a week out — rainfall
+is the dominant input and gates landslide risk, so this is a conservative,
+documented assumption rather than a silent one.
+
+# v1.3 — calibration, weighting and hyperlocal layers
+
+## Structural-risk weighting (government/industry framing)
+
+Past-landslide/flood records now *validate* rather than drive the index, in
+the spirit of NDMA / BIS IS-14496-style susceptibility zonation. The
+structural channel (rainfall-gated) uses:
+
+| Factor | Weight | Source of value |
+|---|---|---|
+| Terrain / slope | 40% | per-locality slope table (SRTM-derived when added) |
+| Soil saturation | 25% | monsoon baseline **sharpened by measured 3-day rain** (`data/observed.py` store) when available |
+| Population exposure | 20% | authoritative panchayat totals ÷ district max |
+| Incident history | 15% | **derived from the register**: incidents within 20 km, severity × recency-decay (1/(years+1)), capped at 0.30 |
+
+The old hand-set `HISTORICAL_INCIDENT_FACTOR` constants are gone — the factor
+is computed from the actual incident record every run, so swapping in the
+real KSDMA register changes behaviour automatically. Historical risk can only
+express itself through the rainfall gate (never in dry weather).
+
+## Ward-level micro-zonation
+
+Each panchayat is split into its LSG ward structure (`data/static/wards.json`;
+Kumily = real LSG Election-2020 wards). Every ward gets a deterministic
+geometric centre inside the panchayat, and a **sensitivity** score from the
+recorded incidents within ~5 km (severity- and recency-weighted). The ward
+danger score = panchayat composite danger × (1 + 1.6 × sensitivity), so
+wards escalate in the right order during heavy rain while staying calm when
+the panchayat is calm. Populations are apportioned from the authoritative
+panchayat totals (equal share until a Census-2011 ward table is supplied via
+`wards_overrides.csv`).
+
+## ML alert calibration — what "90-95%" means here
+
+A literal 90-95% "accuracy" on next-day millimetres is not achievable (daily
+rainfall is high-variance; even top operational models report R² ~0.3-0.5).
+The industry-standard equivalent for an alerting system is **detection of the
+dangerous windows**, which this suite is tuned for:
+
+- **Label**: a day within the next 3 days with ≥64.5 mm rain (IMD very-heavy
+  band) — the windows landslide/flood watches are issued on.
+- **Training cost**: missing a dangerous window costs 4× a false alarm
+  (`COST_RATIO`), so the model is biased conservative on purpose.
+- **Split**: train 2012-2017 · validate 2018-2019 (threshold selection) ·
+  test 2020+ (out-of-sample report) — strictly chronological.
+- **Threshold**: per locality, the *most-specific* cutoff that still catches
+  ≥90% of dangerous windows on validation (max false-alarm cap 25%), stored
+  in each `*_hazard.npz` and used live as the `heavy_alert` flag.
+
+Out-of-sample test results (2020+, from `ml/models/eval.json`):
+
+| Locality | AUC | Test recall | Test precision | False-alarm rate |
+|---|---|---|---|---|
+| Kumily | 0.94 | 0.92 | 0.11 | 0.19 |
+| Peermedu | 0.94 | 0.88 | 0.11 | 0.17 |
+| Idukki | 0.97 | 0.94 | 0.19 | 0.14 |
+| Adimali | 0.94 | 0.93 | 0.18 | 0.18 |
+| Kattappana | 0.97 | 0.93 | 0.16 | 0.18 |
+| Munnar | 0.94 | 0.79 | 0.34 | 0.08 |
+| Nedumkandam | 0.97 | 0.96 | 0.16 | 0.18 |
+
+Median detection ≈93% (AUC 0.94-0.97). Munnar's recall shortfall is real and
+reported, not hidden — its calibration window is noisier; per-locality tuning
+is the documented extension path. Precision is low because dangerous days are
+~2-5% of days; that is the honest price of high recall (many watches, few
+misses), and why every alert is shown as a *probability*, never a certainty.
+
+## Data providers
+
+OpenWeatherMap is the primary current-conditions provider when
+`OPENWEATHERMAP_API_KEY` is set; Open-Meteo covers the 7-day outlook and
+measured history; every series is tagged with its true provider in `/trends`
+and on the cards/drawer (see `docs/DATA_SOURCES.md`).
+
+---
+
+**Document Version:** 1.3  
 **Last Updated:** September 2026  
 **Author:** Idukki Monsoon Danger Index Team

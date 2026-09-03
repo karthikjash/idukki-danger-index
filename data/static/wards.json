@@ -1,0 +1,137 @@
+{
+  "_README": "Ward structures per monitored panchayat. Kumily carries the real LSG Kerala Election-2020 ward table (20 wards). The other panchayats ship a modelled default structure (LSG-typical size) because the LSG Kerala site was unreachable during the build - replace them by editing this file or by dropping a data/static/wards_overrides.csv with columns: locality,ward_no,ward_name,population,source. Ward NAME strings and structure are LSG/Election data; per-ward POPULATION is apportioned from the authoritative panchayat total in index/wards.py.",
+  "panchayats": {
+    "Kumily": {
+      "lsg": "Kumily Grama Panchayat",
+      "structure_source": "LSG Kerala Election-2020 (https://lsgkerala.gov.in/en/lbelection/electdmemberdet/2020/619)",
+      "population_source": "Authoritative panchayat total (project owner)",
+      "wards": [
+        {"no": 1, "name": "ETTEKKAR"},
+        {"no": 2, "name": "CHENKARA"},
+        {"no": 3, "name": "VELLARAMKUNNU"},
+        {"no": 4, "name": "PATHUMURY"},
+        {"no": 5, "name": "OTTAKATHALAMEDU"},
+        {"no": 6, "name": "AMARAVATHY"},
+        {"no": 7, "name": "NOOLAMPARA"},
+        {"no": 8, "name": "VALIYAKANDAM"},
+        {"no": 9, "name": "ROSSAPPOOKANDAM"},
+        {"no": 10, "name": "THAMARAKANDAM"},
+        {"no": 11, "name": "THEKKADY"},
+        {"no": 12, "name": "KUMILY"},
+        {"no": 13, "name": "KOLLAMPATTADA"},
+        {"no": 14, "name": "KUZHIKANDAM"},
+        {"no": 15, "name": "ATTAPPALLAM"},
+        {"no": 16, "name": "SPRING VALLEY"},
+        {"no": 17, "name": "CHOTTUPARA"},
+        {"no": 18, "name": "VISWANATHAPURAM"},
+        {"no": 19, "name": "ODAMEDU"},
+        {"no": 20, "name": "ANAKKUZHI"}
+      ]
+    },
+    "Peermedu": {
+      "lsg": "Peermade Grama Panchayat",
+      "structure_source": "MODELLED default structure (LSG-typical size) - real LSG table available at https://lsgkerala.gov.in/en/lbelection/electdmemberdet/2020/621; drop in via wards.json or wards_overrides.csv",
+      "population_source": "Authoritative panchayat total (project owner)",
+      "wards": [
+        {"no": 1, "name": "WARD 1"}, {"no": 2, "name": "WARD 2"},
+        {"no": 3, "name": "WARD 3"}, {"no": 4, "name": "WARD 4"},
+        {"no": 5, "name": "WARD 5"}, {"no": 6, "name": "WARD 6"},
+        {"no": 7, "name": "WARD 7"}, {"no": 8, "name": "WARD 8"},
+        {"no": 9, "name": "WARD 9"}, {"no": 10, "name": "WARD 10"},
+        {"no": 11, "name": "WARD 11"}, {"no": 12, "name": "WARD 12"},
+        {"no": 13, "name": "WARD 13"}, {"no": 14, "name": "WARD 14"},
+        {"no": 15, "name": "WARD 15"}, {"no": 16, "name": "WARD 16"},
+        {"no": 17, "name": "WARD 17"}, {"no": 18, "name": "WARD 18"},
+        {"no": 19, "name": "WARD 19"}
+      ]
+    },
+    "Idukki": {
+      "lsg": "Idukki Grama Panchayat",
+      "structure_source": "MODELLED default structure (LSG-typical size) - drop in real table via wards.json or wards_overrides.csv",
+      "population_source": "Authoritative panchayat total (project owner)",
+      "wards": [
+        {"no": 1, "name": "WARD 1"}, {"no": 2, "name": "WARD 2"},
+        {"no": 3, "name": "WARD 3"}, {"no": 4, "name": "WARD 4"},
+        {"no": 5, "name": "WARD 5"}, {"no": 6, "name": "WARD 6"},
+        {"no": 7, "name": "WARD 7"}, {"no": 8, "name": "WARD 8"},
+        {"no": 9, "name": "WARD 9"}, {"no": 10, "name": "WARD 10"},
+        {"no": 11, "name": "WARD 11"}, {"no": 12, "name": "WARD 12"},
+        {"no": 13, "name": "WARD 13"}, {"no": 14, "name": "WARD 14"},
+        {"no": 15, "name": "WARD 15"}, {"no": 16, "name": "WARD 16"},
+        {"no": 17, "name": "WARD 17"}, {"no": 18, "name": "WARD 18"},
+        {"no": 19, "name": "WARD 19"}
+      ]
+    },
+    "Adimali": {
+      "lsg": "Adimali Grama Panchayat",
+      "structure_source": "MODELLED default structure (LSG-typical size) - drop in real table via wards.json or wards_overrides.csv",
+      "population_source": "Authoritative panchayat total (project owner)",
+      "wards": [
+        {"no": 1, "name": "WARD 1"}, {"no": 2, "name": "WARD 2"},
+        {"no": 3, "name": "WARD 3"}, {"no": 4, "name": "WARD 4"},
+        {"no": 5, "name": "WARD 5"}, {"no": 6, "name": "WARD 6"},
+        {"no": 7, "name": "WARD 7"}, {"no": 8, "name": "WARD 8"},
+        {"no": 9, "name": "WARD 9"}, {"no": 10, "name": "WARD 10"},
+        {"no": 11, "name": "WARD 11"}, {"no": 12, "name": "WARD 12"},
+        {"no": 13, "name": "WARD 13"}, {"no": 14, "name": "WARD 14"},
+        {"no": 15, "name": "WARD 15"}, {"no": 16, "name": "WARD 16"},
+        {"no": 17, "name": "WARD 17"}, {"no": 18, "name": "WARD 18"},
+        {"no": 19, "name": "WARD 19"}, {"no": 20, "name": "WARD 20"}
+      ]
+    },
+    "Nedumkandam": {
+      "lsg": "Nedumkandam Grama Panchayat",
+      "structure_source": "MODELLED default structure (LSG-typical size) - drop in real table via wards.json or wards_overrides.csv",
+      "population_source": "Authoritative panchayat total (project owner)",
+      "wards": [
+        {"no": 1, "name": "WARD 1"}, {"no": 2, "name": "WARD 2"},
+        {"no": 3, "name": "WARD 3"}, {"no": 4, "name": "WARD 4"},
+        {"no": 5, "name": "WARD 5"}, {"no": 6, "name": "WARD 6"},
+        {"no": 7, "name": "WARD 7"}, {"no": 8, "name": "WARD 8"},
+        {"no": 9, "name": "WARD 9"}, {"no": 10, "name": "WARD 10"},
+        {"no": 11, "name": "WARD 11"}, {"no": 12, "name": "WARD 12"},
+        {"no": 13, "name": "WARD 13"}, {"no": 14, "name": "WARD 14"},
+        {"no": 15, "name": "WARD 15"}, {"no": 16, "name": "WARD 16"},
+        {"no": 17, "name": "WARD 17"}, {"no": 18, "name": "WARD 18"},
+        {"no": 19, "name": "WARD 19"}, {"no": 20, "name": "WARD 20"},
+        {"no": 21, "name": "WARD 21"}
+      ]
+    },
+    "Kattappana": {
+      "lsg": "Kattappana Municipality",
+      "structure_source": "MODELLED default structure (LSG-typical size) - drop in real table via wards.json or wards_overrides.csv",
+      "population_source": "Authoritative municipality total (project owner)",
+      "wards": [
+        {"no": 1, "name": "WARD 1"}, {"no": 2, "name": "WARD 2"},
+        {"no": 3, "name": "WARD 3"}, {"no": 4, "name": "WARD 4"},
+        {"no": 5, "name": "WARD 5"}, {"no": 6, "name": "WARD 6"},
+        {"no": 7, "name": "WARD 7"}, {"no": 8, "name": "WARD 8"},
+        {"no": 9, "name": "WARD 9"}, {"no": 10, "name": "WARD 10"},
+        {"no": 11, "name": "WARD 11"}, {"no": 12, "name": "WARD 12"},
+        {"no": 13, "name": "WARD 13"}, {"no": 14, "name": "WARD 14"},
+        {"no": 15, "name": "WARD 15"}, {"no": 16, "name": "WARD 16"},
+        {"no": 17, "name": "WARD 17"}, {"no": 18, "name": "WARD 18"},
+        {"no": 19, "name": "WARD 19"}, {"no": 20, "name": "WARD 20"},
+        {"no": 21, "name": "WARD 21"}, {"no": 22, "name": "WARD 22"},
+        {"no": 23, "name": "WARD 23"}, {"no": 24, "name": "WARD 24"}
+      ]
+    },
+    "Munnar": {
+      "lsg": "Munnar Grama Panchayat (Municipality since 2021)",
+      "structure_source": "MODELLED default structure (LSG-typical size) - real LSG table available at https://lsgkerala.gov.in/en/lbelection/electdmemberdet/2020/579; drop in via wards.json or wards_overrides.csv",
+      "population_source": "Authoritative panchayat total (project owner)",
+      "wards": [
+        {"no": 1, "name": "WARD 1"}, {"no": 2, "name": "WARD 2"},
+        {"no": 3, "name": "WARD 3"}, {"no": 4, "name": "WARD 4"},
+        {"no": 5, "name": "WARD 5"}, {"no": 6, "name": "WARD 6"},
+        {"no": 7, "name": "WARD 7"}, {"no": 8, "name": "WARD 8"},
+        {"no": 9, "name": "WARD 9"}, {"no": 10, "name": "WARD 10"},
+        {"no": 11, "name": "WARD 11"}, {"no": 12, "name": "WARD 12"},
+        {"no": 13, "name": "WARD 13"}, {"no": 14, "name": "WARD 14"},
+        {"no": 15, "name": "WARD 15"}, {"no": 16, "name": "WARD 16"},
+        {"no": 17, "name": "WARD 17"}, {"no": 18, "name": "WARD 18"},
+        {"no": 19, "name": "WARD 19"}, {"no": 20, "name": "WARD 20"}
+      ]
+    }
+  }
+}

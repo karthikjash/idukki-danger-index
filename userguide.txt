@@ -6,7 +6,7 @@
 
 Version: 1.0
 Date: September 2026
-Location: /home/homie/Projects/SSR_system
+Location: idukki-danger-index
 
 ================================================================================
 TABLE OF CONTENTS
@@ -49,7 +49,7 @@ CHECK PIP:
 
 STEP 1: Navigate to project directory
 
-    cd /home/homie/Projects/SSR_system
+    cd idukki-danger-index
 
 STEP 2: Check directory structure
 
@@ -64,7 +64,7 @@ STEP 3: Install Python dependencies
     # - pandas, numpy, scikit-learn (data processing)
     # - geopandas, folium, shapely (geospatial)
     # - fastapi, uvicorn, pydantic (API)
-    # - streamlit (web UI)
+    # - dashboard UI (served by the API)
     # - requests (data fetching)
     # - Other utilities
 
@@ -72,7 +72,7 @@ STEP 3: Install Python dependencies
 
 STEP 4: Verify installation
 
-    python3 -c "import pandas, folium, streamlit, fastapi; print('✓ All dependencies installed')"
+    python3 -c "import pandas, folium, fastapi; print('✓ All dependencies installed')"
 
     # Should print: ✓ All dependencies installed
 
@@ -88,33 +88,27 @@ STEP 5: Make scripts executable
 
 OPTION A: INTERACTIVE MENU (RECOMMENDED FOR FIRST-TIME USERS)
 
-    cd /home/homie/Projects/SSR_system
+    cd idukki-danger-index
     ./quick-start.sh
 
     # Interactive menu with options:
-    # 1. Run Resident Web App (Streamlit)
-    # 2. Run API Server (FastAPI)
-    # 3. Run End-to-End Demo
-    # 4. View Documentation
-    # 5. Generate Interactive Map
-    # 6. Exit
+    # 1. Run the Dashboard + API (opens http://localhost:8000)
+    # 2. Run End-to-End Demo
+    # 3. View Documentation
+    # 4. Generate Interactive Map
+    # 5. Exit
 
     # Follow on-screen instructions
 
 OPTION B: RUN ALL COMPONENTS MANUALLY
 
-    Terminal 1 - Streamlit App:
-        cd /home/homie/Projects/SSR_system
-        streamlit run frontend/app.py
-        # Opens at http://localhost:8501
-
-    Terminal 2 - API Server:
-        cd /home/homie/Projects/SSR_system
+    Terminal 1 - Web Dashboard + API (one server):
+        cd idukki-danger-index
         python3 api/server.py
-        # Runs at http://localhost:8000
+        # Opens at http://localhost:8000 (dashboard + JSON API + /docs)
 
-    Terminal 3 - Monitor (Optional):
-        cd /home/homie/Projects/SSR_system
+    Terminal 2 - Monitor (Optional):
+        cd idukki-danger-index
         python3 demo.py
         # Shows system status in terminal
 
@@ -128,56 +122,50 @@ LAUNCH QUICK-START MENU:
 
 MENU OPTIONS EXPLAINED:
 
-Option 1: Run Resident Web App
-    ✓ Launches Streamlit web interface
-    ✓ Access at http://localhost:8501
-    ✓ Select your locality → see Danger Index
-    ✓ View forecast, guidance, map
-    ✓ Press Ctrl+C to stop
-
-Option 2: Run API Server
-    ✓ Launches FastAPI REST backend
+Option 1: Run the Dashboard + API
+    ✓ Launches the web server (dashboard + REST API)
     ✓ Access at http://localhost:8000
-    ✓ Interactive docs at http://localhost:8000/docs
-    ✓ Use for government integration
+    ✓ District overview → tap a locality → Danger Index
+    ✓ View forecast, guidance, incidents, interactive map
+    ✓ API docs at http://localhost:8000/docs
     ✓ Press Ctrl+C to stop
 
-Option 3: Run Demo
+Option 2: Run Demo
     ✓ Shows all system capabilities
     ✓ No server required
     ✓ Demonstrates:
-      - Data fetching from IMD, NASA, KSDMA
+      - Live/synthetic weather fetching
       - Danger Index calculation
       - Map generation
       - Sample resident view
       - Historical incidents
 
-Option 4: View Documentation
+Option 3: View Documentation
     ✓ Shows available documentation files
     ✓ Option to open README.md
-    ✓ Files: README.md, METHODOLOGY.md, API_REFERENCE.md, etc.
+    ✓ Files: README.md, METHODOLOGY.md, API_REFERENCE.md, DATA_SOURCES.md
 
-Option 5: Generate Interactive Map
+Option 4: Generate Interactive Map
     ✓ Generates current danger map
     ✓ Shows all localities with current risk levels
     ✓ Saved as: idukki_danger_map.html
     ✓ Open in any web browser
 
-Option 6: Exit
+Option 5: Exit
     ✓ Closes the menu
 
 ================================================================================
 5. RUNNING INDIVIDUAL COMPONENTS
 ================================================================================
 
-A. RESIDENT WEB APP (STREAMLIT)
+A. RESIDENT DASHBOARD (WEB UI)
    ════════════════════════════════════════════════════════════════════════
 
    COMMAND:
-       streamlit run frontend/app.py
+       python3 api/server.py
 
    WHAT IT DOES:
-       • Launches web interface at http://localhost:8501
+       • Launches web interface at http://localhost:8000
        • Non-technical resident-facing UI
        • Select locality → see current Danger Index
        • View sub-scores, weather, forecast
@@ -195,7 +183,7 @@ A. RESIDENT WEB APP (STREAMLIT)
        ✓ Emergency contact info
 
    ACCESS:
-       Open browser: http://localhost:8501
+       Open browser: http://localhost:8000
 
    STOP:
        Press Ctrl+C in terminal
@@ -586,24 +574,14 @@ B. DEPENDENCIES NOT INSTALLED
 C. PORT ALREADY IN USE
    ════════════════════════════════════════════════════════════════════════
 
-   ERROR (Streamlit):
-       Address already in use
-
-   SOLUTION:
-       Kill existing process:
-       lsof -ti:8501 | xargs kill -9
-
-       Or use different port:
-       streamlit run frontend/app.py --server.port=8502
-
-   ERROR (FastAPI):
-       Address already in use
+   ERROR:
+       Address already in use (port 8000)
 
    SOLUTION:
        Kill existing process:
        lsof -ti:8000 | xargs kill -9
 
-       Or use different port:
+       Or run on a different port:
        Edit api/server.py, change port=8000 to port=8001
 
 
@@ -635,18 +613,16 @@ E. MAP NOT GENERATING
        pip3 install --force-reinstall folium
 
 
-F. STREAMLIT NOT RESPONSIVE
+F. DASHBOARD NOT RESPONSIVE
    ════════════════════════════════════════════════════════════════════════
 
    ERROR:
-       App doesn't load or is slow
+       Dashboard doesn't load or is slow
 
    SOLUTION:
-       Clear Streamlit cache:
-       rm -rf ~/.streamlit/
-
-       Restart app:
-       streamlit run frontend/app.py --logger.level=debug
+       Restart the server:
+       lsof -ti:8000 | xargs kill -9
+       python3 api/server.py
 
 
 G. API SERVER NOT RESPONDING
@@ -707,12 +683,8 @@ A. ADD A NEW LOCALITY
 
    STEP 3: Restart the app
 
-   For Streamlit:
-       Stop (Ctrl+C) and restart:
-       streamlit run frontend/app.py
-
-   For API:
-       Stop (Ctrl+C) and restart:
+   Restart the server:
+       Stop (Ctrl+C), then run again:
        python3 api/server.py
 
 
@@ -721,7 +693,9 @@ B. CHANGE DANGER INDEX WEIGHTS
 
    Edit: index/calculator.py
 
-   Find: calculate_composite_index() method
+   Find the top-of-file constants:
+       W_ENV, W_STRUCT, W_HUMAN   (weights, must sum to 1.0)
+       T_LOW, T_MOD, T_HIGH       (tier thresholds)
 
    Change these values (must sum to 1.0):
        composite_score = (
@@ -775,9 +749,9 @@ E. SCHEDULE AUTOMATIC UPDATES
 
    Add these lines (updates 2x daily):
        # Run demo and save output
-       0 6 * * * cd /home/homie/Projects/SSR_system && python3 demo.py >> /tmp/idukki_demo.log 2>&1
+       0 6 * * * cd idukki-danger-index && python3 demo.py >> /tmp/idukki_demo.log 2>&1
 
-       0 18 * * * cd /home/homie/Projects/SSR_system && python3 demo.py >> /tmp/idukki_demo.log 2>&1
+       0 18 * * * cd idukki-danger-index && python3 demo.py >> /tmp/idukki_demo.log 2>&1
 
    View results:
        tail -f /tmp/idukki_demo.log
@@ -788,7 +762,7 @@ F. BACKUP DATA
 
    Create backup:
        tar -czf idukki_backup_$(date +%Y%m%d).tar.gz \
-         /home/homie/Projects/SSR_system
+         idukki-danger-index
 
    List backups:
        ls -lh idukki_backup*.tar.gz
@@ -800,10 +774,7 @@ F. BACKUP DATA
 G. VIEW LOGS
    ════════════════════════════════════════════════════════════════════════
 
-   Streamlit logs:
-       ~/.streamlit/logs/
-
-   FastAPI logs:
+   Server logs:
        Print to console when running python3 api/server.py
 
    Demo logs:
@@ -816,8 +787,8 @@ H. MONITOR SYSTEM HEALTH
    Check if API is running:
        curl http://localhost:8000/health | jq
 
-   Check if Streamlit is running:
-       curl http://localhost:8501/_stcore/health
+   Check the dashboard:
+       curl -I http://localhost:8000/
 
    Check Python processes:
        ps aux | grep python3
@@ -847,15 +818,15 @@ QUICK REFERENCE CARD
 ================================================================================
 
 INSTALLATION:
-    cd /home/homie/Projects/SSR_system
+    cd idukki-danger-index
     pip3 install -r requirements.txt
 
 RUN QUICK-START MENU:
     ./quick-start.sh
 
 RUN RESIDENT APP:
-    streamlit run frontend/app.py
-    # Open: http://localhost:8501
+    python3 api/server.py
+    # Open: http://localhost:8000
 
 RUN API SERVER:
     python3 api/server.py
@@ -877,8 +848,7 @@ VIEW DOCUMENTATION:
     cat docs/API_REFERENCE.md
 
 KILL SERVERS:
-    lsof -ti:8501 | xargs kill -9  # Streamlit
-    lsof -ti:8000 | xargs kill -9  # FastAPI
+    lsof -ti:8000 | xargs kill -9  # API/dashboard server
 
 ================================================================================
 GETTING HELP
@@ -911,10 +881,10 @@ END OF USER GUIDE
 
 Last Updated: September 2026
 Version: 1.0
-Location: /home/homie/Projects/SSR_system/userguide.txt
+Location: idukki-danger-index/userguide.txt
 
 For latest updates and documentation, visit:
-    /home/homie/Projects/SSR_system/README.md
-    /home/homie/Projects/SSR_system/PROJECT_SUMMARY.md
+    idukki-danger-index/README.md
+    idukki-danger-index/PROJECT_SUMMARY.md
 
 ================================================================================

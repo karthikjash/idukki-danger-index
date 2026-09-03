@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Hyperlocal monsoon danger forecast for inner Idukki, Kerala — plain language, colour-coded, updated daily." />
+  <title>Idukki Danger Index — Monsoon Watch</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230e1730' stroke='%233b82f6'/%3E%3Cpath d='M16 6l6 10-6 10-6-10z' fill='%233b82f6'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+  <!-- ============ Header ============ -->
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r="18" fill="none" stroke="url(#g1)" stroke-width="2.5"/>
+          <path d="M20 8l7 12-7 12-7-12z" fill="url(#g2)"/>
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#22d3ee"/>
+            </linearGradient>
+            <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#1d4ed8"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <div>
+          <h1>Idukki Danger Index</h1>
+          <p class="tagline">Hyperlocal monsoon watch · inner Idukki, Kerala</p>
+        </div>
+      </div>
+
+      <div class="header-meta">
+        <span id="season-pill" class="pill pill-season" data-season="dry">Dry season</span>
+        <span id="source-pill" class="pill pill-source" data-source="live">● Live data</span>
+        <span id="enso-pill" class="pill pill-enso hidden" title="Seasonal ENSO context from NOAA CPC">—</span>
+        <button id="btn-notify" class="notify-btn" title="Register your mobile for SMS alerts — danger warnings, daily briefing and weekly outlook">
+          <svg class="notify-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <path d="M8.5 9.5h7"/>
+            <path d="M8.5 13h4.5"/>
+          </svg>
+          SMS Alerts
+        </button>
+        <div class="lang-switch" role="group" aria-label="Language / ഭാഷ">
+          <button id="lang-en" class="lang-btn is-active" title="English">EN</button>
+          <button id="lang-ml" class="lang-btn" title="മലയാളം">മല</button>
+        </div>
+        <div class="clock">
+          <div id="clock-date" class="clock-date">—</div>
+          <div id="clock-time" class="clock-time">—</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ Data source banner ============ -->
+  <div id="synthetic-banner" class="banner hidden">
+    <div class="wrap">
+      ⚠ <strong>Showing modelled demo data.</strong>
+      No live weather feed could be reached — the numbers below are season-aware
+      estimates, not live observations. <button id="banner-retry" class="linkish">Retry live feed</button>
+    </div>
+  </div>
+
+  <main class="wrap">
+
+    <!-- ============ District hero ============ -->
+    <section id="hero" class="panel hero" aria-live="polite">
+      <div class="hero-left">
+        <p class="eyebrow">District status · now</p>
+        <h2 id="hero-tier" class="hero-tier" data-tier="Low">—</h2>
+        <p id="hero-sentence" class="hero-sentence">Loading district overview…</p>
+      </div>
+      <div class="hero-right">
+        <div class="hero-stat">
+          <div id="hero-avg" class="hero-avg">—</div>
+          <span class="hero-stat-label">district risk score</span>
+        </div>
+        <div class="hero-tiers">
+          <div class="tier-legend">
+            <span class="dot" data-tier="Low"></span> Low&nbsp;<b id="c-Low">–</b>
+          </div>
+          <div class="tier-legend">
+            <span class="dot" data-tier="Moderate"></span> Moderate&nbsp;<b id="c-Moderate">–</b>
+          </div>
+          <div class="tier-legend">
+            <span class="dot" data-tier="High"></span> High&nbsp;<b id="c-High">–</b>
+          </div>
+          <div class="tier-legend">
+            <span class="dot" data-tier="Extreme"></span> Extreme&nbsp;<b id="c-Extreme">–</b>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ View switch ============ -->
+    <nav class="tabs" role="tablist">
+      <button id="tab-localities" class="tab is-active" role="tab" aria-selected="true">Localities</button>
+      <button id="tab-map" class="tab" role="tab" aria-selected="false">Danger map</button>
+    </nav>
+
+    <!-- ============ Localities view ============ -->
+    <section id="view-localities" class="view">
+      <div class="toolbar">
+        <div class="searchbox" title="Search panchayat, risk level or hazard text">
+          <input id="search-input" type="search" placeholder="Search panchayat, risk level, hazard…" autocomplete="off" aria-label="Search localities" />
+          <button id="search-clear" class="search-clear hidden" aria-label="Clear search">✕</button>
+        </div>
+
+        <div class="quick-actions">
+          <button id="btn-highest" class="btn-ghost btn-alert" title="Jump straight to the panchayat at the highest risk right now"><span class="qic" aria-hidden="true">⚠</span> Most at risk now</button>
+          <button id="btn-worst-week" class="btn-ghost btn-caution" title="Scan all 7 areas and show the single most dangerous day in the next 7 days"><span class="qic" aria-hidden="true">⚠</span> Worst day this week</button>
+        </div>
+
+        <div class="tier-filters" role="group" aria-label="Filter by risk level">
+          <button class="tf is-active" data-tier="">All</button>
+          <button class="tf" data-tier="Low">Low</button>
+          <button class="tf" data-tier="Moderate">Moderate</button>
+          <button class="tf" data-tier="High">High</button>
+          <button class="tf" data-tier="Extreme">Extreme</button>
+        </div>
+      </div>
+
+      <div id="week-scan" class="week-scan hidden" aria-live="polite"></div>
+
+      <div id="cards" class="cards">
+        <div class="card skeleton">Loading localities…</div>
+      </div>
+
+      <p class="howto">Tap a locality for plain-language guidance, the 7-day danger outlook (tier per day, days ahead) and nearby past incidents. Press <b>/</b> to search.</p>
+    </section>
+
+    <!-- ============ Map view ============ -->
+    <section id="view-map" class="view hidden">
+      <div class="map-shell">
+        <button id="load-map" class="btn btn-primary">Load interactive danger map</button>
+        <p class="howto">Colour-coded zones with a toggleable layer of historical landslide &amp; flood incidents (2004–2025).</p>
+      </div>
+    </section>
+
+    <!-- ============ Footer ============ -->
+    <footer class="footer">
+      <div class="footer-emergency">
+        <span class="eyebrow">In an emergency</span>
+        <div class="emergency-numbers">
+          <div class="emergency-card"><b>112</b><span>National emergency</span></div>
+          <div class="emergency-card"><b>1077</b><span>Kerala disaster helpline</span></div>
+        </div>
+      </div>
+      <p class="disclaimer" data-notr>
+        This is a forecast tool, not a guarantee. Always follow official warnings
+        and evacuation orders from KSDMA / district authorities. Data sources:
+        live conditions: OpenWeatherMap (when configured) or Open-Meteo · measured
+        history &amp; 7-day outlook: Open-Meteo · IMD rain categories · NOAA CPC ONI ·
+        KSDMA incident records (sample) · panchayat/ward structure: LSG Kerala +
+        Census-2011-derived population. Ward splits are modelled estimates until
+        a Census ward table is dropped in.
+        <a href="/docs" target="_blank" rel="noopener">API docs</a> ·
+        <a href="/summary" target="_blank" rel="noopener">Raw summary</a> ·
+        <a href="/report?locality=all&amp;format=pdf" target="_blank" rel="noopener">Seasonal report (PDF)</a> ·
+        <a href="/report?locality=all&amp;format=docx" target="_blank" rel="noopener">Seasonal report (DOCX)</a>
+      </p>
+    </footer>
+  </main>
+
+  <!-- ============ SMS alerts modal ============ -->
+  <div id="notify-modal" class="modal" aria-hidden="true">
+    <div class="modal-scrim" data-notify-close></div>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="notify-title">
+      <button class="drawer-close" data-notify-close aria-label="Close">✕</button>
+      <h2 id="notify-title">SMS Alerts</h2>
+      <p class="notify-lead">Free text alerts on your mobile — pick the areas and what to receive.</p>
+      <div id="notify-mode" class="notify-mode demo" data-notr aria-live="polite">—</div>
+      <form id="notify-form" autocomplete="off">
+        <div class="nfield">
+          <label for="notify-phone">Mobile number</label>
+          <input id="notify-phone" name="phone" type="tel" inputmode="numeric"
+                 placeholder="98765 43210 (10-digit Indian)" required />
+          <span class="nhelp">You will receive a confirmation SMS on this number.</span>
+        </div>
+        <div class="nfield">
+          <label>Message language</label>
+          <div class="lang-switch" role="group" aria-label="Message language">
+            <button type="button" id="nlang-en" class="lang-btn is-active">EN</button>
+            <button type="button" id="nlang-ml" class="lang-btn">മല</button>
+          </div>
+        </div>
+        <div class="nfield">
+          <label>Localities to watch</label>
+          <div id="notify-loc" class="tf-wrap"></div>
+        </div>
+        <div class="nfield">
+          <label>Alert types</label>
+          <label class="nopt">
+            <input type="checkbox" id="nplan-danger" checked />
+            <span class="nopt-body"><b>Danger alerts</b><i>Instant SMS when a watched area reaches the threshold below</i></span>
+          </label>
+          <div class="threshold-row">
+            <span>Alert when risk is at least</span>
+            <select id="nthreshold">
+              <option value="High">High</option>
+              <option value="Extreme">Extreme</option>
+            </select>
+          </div>
+          <label class="nopt">
+            <input type="checkbox" id="nplan-daily" />
+            <span class="nopt-body"><b>Daily briefing</b><i>Every morning at 7:00 — today's reading plus tomorrow's forecast</i></span>
+          </label>
+          <label class="nopt">
+            <input type="checkbox" id="nplan-weekly" />
+            <span class="nopt-body"><b>Weekly outlook</b><i>Every Monday at 8:00 — the week's worst day for each area</i></span>
+          </label>
+        </div>
+        <div id="notify-status" class="notify-status" data-notr aria-live="polite"></div>
+        <div class="notify-actions">
+          <button type="submit" id="notify-save" class="btn btn-primary">Save subscription</button>
+          <button type="button" id="notify-test" class="btn-ghost">Send test SMS</button>
+          <button type="button" id="notify-unsub" class="btn-unsub hidden">Unsubscribe</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ Locality detail drawer ============ -->
+  <div id="drawer" class="drawer" aria-hidden="true">
+    <div class="drawer-scrim" data-close></div>
+    <aside class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+      <button class="drawer-close" data-close aria-label="Close panel">✕</button>
+      <div id="drawer-body"><!-- filled by app.js --></div>
+    </aside>
+  </div>
+
+  <noscript>
+    <div class="wrap noscript">This dashboard needs JavaScript. The data is also available through the
+    <a href="/docs">REST API</a>.</div>
+  </noscript>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

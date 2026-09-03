@@ -1,360 +1,209 @@
 # Idukki Monsoon Danger Index
 
-🌧️ **A hyperlocal monsoon severity forecaster for inner Idukki district, Kerala**
+**A hyperlocal monsoon-risk early-warning system for inner Idukki district, Kerala.**
 
-Communicates real-time danger levels to non-technical residents through colour-coded maps, plain-language summaries, and actionable guidance — no jargon, no charts.
+The system turns live weather data into a plain-language, colour-coded danger
+level for each of the seven main panchayats of inner Idukki — **Kumily,
+Peermedu, Idukki, Adimali, Nedumkandam, Kattappana, Munnar** — tells people
+*why* an area is dangerous and *what to do*, forecasts the danger up to seven
+days ahead, flags heavy-rain danger windows with a machine-learning model
+trained on the 2012–2025 local rainfall record, and delivers SMS alerts to
+registered residents.
 
----
+It is a working prototype of the *Climate Intelligence for Kerala* SSR
+proposal: a full data → index → ML → GIS → dashboard → report → alert stack
+that runs end-to-end on a normal machine. **It is a forecast tool, not a
+guarantee** — it always defers to official KSDMA / IMD / district warnings.
 
-## 🎯 What It Does
-
-**For Residents:**
-- Select your panchayat (Kumily, Peermedu, Idukki, Adimali, Kattappana, Munnar, Nedumkandam)
-- Get a 4-tier **Danger Index** (Low / Moderate / High / Extreme)
-- Understand *why* it's dangerous (rainfall, terrain, population at risk)
-- See plain-language **"what to do"** guidance (no jargon)
-- View past incidents nearby (to understand local hazards)
-- Interactive map showing all zones and historical events
-
-**For Officials:**
-- REST API for integration with government alert systems
-- Real-time Danger Index for all inner-Idukki localities
-- Historical incident overlay for situational awareness
-- Exportable map and summary statistics
+Full documentation booklet: [`docs/PROJECT_DOCUMENTATION.pdf`](docs/PROJECT_DOCUMENTATION.pdf) (regenerate with
+`python3 docs/generate_project_doc.py`).
 
 ---
 
-## ⚡ Quick Start
+## Features
 
-### Prerequisites
-- Python 3.9+
-- `pip` or `conda`
+**For residents**
+- Live **4-tier danger index** (Low / Moderate / High / Extreme) per panchayat,
+  with the plain-language *reason* and *what to do / what to avoid*
+  guidance.
+- **7-day danger outlook** — the same danger model run on each forecast day,
+  so a rising tier is visible days before the rain arrives.
+- **Ward-level exposure** — risk micro-zones per panchayat (real LSG
+  Election-2020 wards for Kumily), with incident-weighted scoring.
+- **AI 24-hour outlook** — next-day rainfall plus a heavy-rain alert from
+  models calibrated per locality to catch ≥90% of dangerous windows
+  (out-of-sample AUC 0.94–0.97 — see [Machine learning](#machine-learning)).
+- **Three trend charts** per area: rainfall outlook, 30-day measured monsoon
+  pattern, and 48 h wind/humidity/temperature — every series tagged with the
+  real provider that supplied it.
+- **Seasonal context** — ENSO phase (NOAA CPC ONI) and lightning-risk
+  advisories.
+- **English ⇄ മലയാളം** — the entire UI, guidance and SMS messages translate;
+  English is the default and the choice is remembered per browser.
+- **SMS alerts** — register a mobile number and choose areas, language,
+  threshold and schedule (danger / daily / weekly) — see
+  [SMS alerts](#sms-alerts).
 
-### 1. Install Dependencies
+**For officials / administrators**
+- REST API for every layer (`/index`, `/danger-forecast`,
+  `/trends`, `/wards`, `/ml`, `/outlook`, `/report`, `/notify/*`).
+- **Seasonal risk reports** — a PDF *and* a DOCX per panchayat or for the
+  whole district.
+- Interactive **danger map** with historical incident overlay.
+- Summary + health endpoints for integration and monitoring.
+
+---
+
+## Quick start
+
+Requires Python 3.9+. No database, no heavy ML stack — the ML engine is pure
+NumPy and everything ships in `requirements.txt`.
 
 ```bash
-cd /home/homie/Projects/SSR_system
-pip install -r requirements.txt
+git clone https://github.com/karthikjash/idukki-danger-index
+cd idukki-danger-index
+
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+.venv/bin/python api/server.py
 ```
 
-### 2. Run the Resident App
+Open **http://localhost:8000** (API docs at `/docs`). On first boot the
+server, in the background and without blocking the UI:
+
+- trains the per-panchayat ML models from the ERA5 rainfall archive
+  (`ml/models/`, usually ~1 min per area),
+- starts the SMS alert scheduler,
+- closes measured-weather history into the local store.
+
+### Optional configuration — `.env`
 
 ```bash
-streamlit run frontend/app.py
+cp .env.example .env    # then fill in the keys you want
 ```
 
-Opens in browser at `http://localhost:8501`
+| Key | Effect |
+| --- | --- |
+| `OPENWEATHERMAP_API_KEY` | Current conditions + 5-day/3-h outlook become the **primary live provider** (otherwise Open-Meteo covers everything, always labelled) |
+| `FAST2SMS_API_KEY` | SMS alerts go out through Fast2SMS (register a DLT sender/template for transactional SMS in India) |
+| `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_FROM` | Alternative SMS gateway with full Unicode/Malayalam support |
 
-**Features:**
-- 📍 Select your locality
-- ⚠️ See current Danger Index (colour-coded)
-- 📊 View sub-scores and weather data
-- 📅 7-day rainfall forecast
-- 📍 Past incidents in your area
-- 🗺️ Interactive map of all zones
-
-### 3. Run the API Server (Optional)
-
-```bash
-python api/server.py
-```
-
-Starts FastAPI at `http://localhost:8000`
-
-**Endpoints:**
-- `GET /` — API info page
-- `GET /localities` — List all monitored areas
-- `GET /index` — All Danger Indices
-- `GET /index/{locality}` — Single locality
-- `GET /map` — Interactive map (HTML)
-- `GET /incidents` — Historical incidents
-- `GET /docs` — Interactive Swagger UI
+Without a gateway key the SMS service runs in **demo mode** — every message
+is previewed in the UI and logged to `data/notifications/outbox.jsonl`, so
+the whole flow is verifiable before a key is added.
 
 ---
 
-## 📊 How It Works
+## How the danger index is computed
 
-### 1. Data Sources (All Public)
+For each panchayat, live weather (rainfall, wind, humidity, cloud) is fetched,
+and a composite score (0–1) is built from four documented components under a
+government-style weighting scheme — **terrain 40% · soil 25% · exposure
+(population/wards) 20% · incident history 15%** — where rainfall *gates* the
+structural risk: without rain the score cannot rise, no matter the terrain.
+Incident history is derived from the register with proximity + severity +
+recency decay (no hand-set constants). The score maps to IMD rain bands
+(heavy ≥64.5 mm, very heavy ≥115.5 mm) and to tier-specific guidance.
+Methodology: [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md).
 
-| Data | Source | Frequency |
-|------|--------|-----------|
-| **Rainfall** | IMD (mausam.imd.gov.in), NASA GPM IMERG | 6-hourly / 30-min |
-| **Wind, Humidity** | IMD gridded forecasts | 6-hourly |
-| **Cloud Cover** | NASA MODIS satellite | Daily |
-| **Past Incidents** | KSDMA records (2004–present) | Static |
-| **Population** | Census of India 2021 | Static |
-| **Terrain** | OpenStreetMap, ISRO Bhuvan | Static |
+## Machine learning
 
-### 2. Composite Danger Index
+Daily rainfall per panchayat (2012–2025) trains, in pure NumPy: an **LSTM**
+forecaster (the proposal's named architecture), a **ridge** next-day baseline
+and a **logistic hazard classifier** for ≥64.5 mm within 3 days. Misses cost
+4× a false alarm; each threshold is calibrated on the 2018–2019 validation
+years to ≥90% recall, then measured honestly **out-of-sample on 2020–2026**
+data the models never saw — `ml/models/eval.json` holds full confusion
+matrices. Median detection ≈93%, AUC 0.94–0.97, ridge MAE ≈7.0 mm (σ ≈15
+mm). See [`docs/ACCURACY_IMPROVEMENT_REPORT.md`](docs/ACCURACY_IMPROVEMENT_REPORT.md).
 
-Three sub-scores (each 0–1) are combined:
+## SMS alerts
 
-```
-40% Environmental Severity
-   ├─ Rainfall intensity (primary monsoon driver)
-   ├─ Wind speed
-   ├─ Humidity
-   └─ Cloud cover
+Click **SMS Alerts** in the header (or *SMS alerts for this area* inside any
+panchayat's panel), enter a mobile number, and pick:
 
-35% Structural Risk
-   ├─ Terrain slope (steep = more landslide risk)
-   ├─ Historical incident frequency
-   ├─ Infrastructure exposure (population proxy)
-   └─ Soil saturation
+1. **Danger alerts** — instant SMS when a watched area crosses your threshold
+   (High or Extreme), at most once per area per day.
+2. **Daily briefing** — every day at 07:00 IST: today's level and rain, plus
+   tomorrow's forecast, per watched area.
+3. **Weekly outlook** — every Monday at 08:00 IST: the week's worst day per
+   area from the 7-day danger outlook.
 
-25% Human Threat Level
-   ├─ Population exposure
-   ├─ Rainfall-driven danger to life
-   └─ Evacuation difficulty
-```
-
-**Final Index:** Weighted sum → 4-tier assignment
-
-```
-Score < 0.25        → 🟢 LOW
-0.25 ≤ Score < 0.50 → 🟠 MODERATE
-0.50 ≤ Score < 0.75 → 🔴 HIGH
-Score ≥ 0.75        → 🔴 EXTREME
-```
-
-### 3. Visual Output
-
-- **Streamlit UI** — Locality selector, current index, sub-scores, forecast, guidance, incidents
-- **Interactive Map** — Folium-based, colour-coded zones, toggleable incident layer
-- **REST API** — JSON responses for government integration
+Messages are sent in English or Malayalam as chosen. Subscriptions live in
+`data/subscriptions.json` (git-ignored). Endpoints: `GET/POST/DELETE
+/notify/subscribe`, `POST /notify/test`, `GET /notify/messages`, `GET
+/notify/status`.
 
 ---
 
-## 🗂️ Directory Structure
+## REST API (summary)
 
-```
-/SSR_system/
-├── /data/
-│   └── fetcher.py              # IMD, NASA, KSDMA data ingestion
-│
-├── /index/
-│   ├── calculator.py           # Danger Index computation & formulas
-│   └── map_generator.py        # Folium interactive map
-│
-├── /api/
-│   └── server.py               # FastAPI REST backend
-│
-├── /frontend/
-│   └── app.py                  # Streamlit resident web app
-│
-├── /docs/
-│   ├── METHODOLOGY.md          # Detailed methodology & formulas
-│   ├── DATA_SOURCES.md         # How to fetch IMD, NASA, KSDMA data
-│   └── API_REFERENCE.md        # API endpoint details
-│
-├── requirements.txt            # Python packages
-└── README.md                   # This file
-```
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /health`, `/summary` | Health and district summary |
+| `GET /index` · `/index/{locality}` | Danger index, all or one panchayat |
+| `GET /danger-forecast/{locality}` | 7-day danger outlook (tier/day, probability, worst day) |
+| `GET /trends/{locality}` | Chart series (outlook / measured 30 d / 48 h) |
+| `GET /wards/{locality}` | Ward micro-zones |
+| `GET /ml` | AI outlook + evaluation data |
+| `GET /outlook` | ENSO + lightning |
+| `GET /report?locality=&format=pdf\|docx` | Seasonal report download |
+| `GET /incidents`, `GET /map` | Historical events, interactive map |
+| `/notify/*` | SMS subscriptions, tests, outbox |
+
+Full reference with examples: [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md).
 
 ---
 
-## 🌍 Monitored Localities (Inner Idukki)
+## Project layout
 
-| Panchayat | Coordinates | Terrain Risk | Population |
-|-----------|-------------|--------------|------------|
-| **Kumily** | 9.655°N, 76.775°E | Very Steep | ~45,000 |
-| **Peermedu** | 9.545°N, 76.615°E | Extremely Steep | ~32,000 |
-| **Idukki** | 9.725°N, 76.805°E | Very Steep | ~28,000 |
-| **Adimali** | 9.575°N, 76.895°E | Extremely Steep | ~22,000 |
-| **Kattappana** | 9.650°N, 76.925°E | Very Steep | ~38,000 |
-| **Munnar** | 10.089°N, 76.766°E | Very Steep | ~35,000 |
-| **Nedumkandam** | 9.800°N, 76.868°E | Steep | ~18,000 |
-
----
-
-## 🎓 Danger Index Tiers — What They Mean
-
-### 🟢 LOW (Score < 0.25)
-**Safe.** Normal activity OK. Monitor daily.  
-✅ Schools, markets, offices open  
-✅ Travel, work as usual  
-⚠️ Stay alert during monsoon season
-
-### 🟠 MODERATE (Score 0.25–0.50)
-**Caution.** Heavy rainfall; avoid unnecessary travel.  
-⚠️ Stay indoors during heavy rain  
-⚠️ Avoid hilly areas  
-⚠️ Keep children indoors
-
-### 🔴 HIGH (Score 0.50–0.75)
-**Danger.** Landslides/floods possible. Stay indoors.  
-🚨 **STAY INDOORS**  
-🚨 Avoid all non-essential travel  
-🚨 Prepare to evacuate (pack go-bag with documents, medicines, water)
-
-### 🔴 EXTREME (Score ≥ 0.75)
-**SEVERE DANGER.** Evacuate if ordered.  
-🚨 **EVACUATE IMMEDIATELY** if told by authorities  
-🚨 Go to panchayat-designated shelter  
-🚨 Avoid rivers, dams, slopes  
-📞 **Call: 112 (national) or 1077 (Kerala Disaster)**
-
----
-
-## 🔧 Configuration & Customization
-
-### Adjust Weighting
-
-Edit `index/calculator.py`:
-
-```python
-# In calculate_composite_index():
-composite_score = (
-    0.40 * environmental_severity +  # Adjust these percentages
-    0.35 * structural_risk +         # (must sum to 1.0)
-    0.25 * human_threat_level
-)
+```
+api/server.py            FastAPI app: dashboard + REST API + background threads
+data/                    Live providers (openweather / open-meteo / observed),
+                         static ward tables (data/static/wards.json)
+index/                   Danger-index calculator, 7-day outlook, ward zoning, map
+ml/                      Dataset, NumPy models, training + per-locality eval
+notify/                  SMS subscriptions, EN/ML composer, scheduler, gateways
+outlook/                 ENSO phase + lightning climatology
+reporting/               Seasonal report PDF/DOCX generation
+frontend/static/         Dashboard (vanilla JS, no build step, EN/ML)
+docs/                    Methodology, API reference, data sources, proposal
+                         coverage, accuracy report, this booklet (PDF)
 ```
 
-### Add/Remove Localities
+## Documentation
 
-Edit `data/fetcher.py`:
+| Document | Contents |
+| --- | --- |
+| `docs/PROJECT_DOCUMENTATION.pdf` | Full project booklet (this readme's big sibling) |
+| `docs/METHODOLOGY.md` | Scoring, weighting, ML protocol in detail |
+| `docs/API_REFERENCE.md` | Every endpoint with examples |
+| `docs/DATA_SOURCES.md` | Providers, keys, accuracy notes |
+| `docs/PROPOSAL_COVERAGE.md` | Proposal item → status map (incl. what is *not* built) |
+| `docs/ACCURACY_IMPROVEMENT_REPORT.md` | Retraining, calibration and evaluation results |
 
-```python
-LOCALITIES = {
-    'Locality_Name': {'lat': 9.XXX, 'lon': 76.XXX},
-    # Add your locality...
-}
-```
+## Reproducibility
 
-### Adjust Tier Thresholds
+- `python3 ml/train.py` — retrain all models and rewrite `ml/models/eval.json`
+  (deterministic split: train 2012–2017 → calibrate 2018–2019 → test 2020+).
+- `python3 docs/generate_project_doc.py` — regenerate the documentation PDF.
+- No automated test suite yet — the ML metrics in `eval.json` and the live
+  endpoint checks in the documentation PDF act as the current regression
+  evidence.
 
-Edit `index/calculator.py`:
+## Honest limitations
 
-```python
-if composite_score < 0.25:      # Adjust these thresholds
-    tier = 'Low'
-elif composite_score < 0.50:
-    tier = 'Moderate'
-# etc.
-```
+- The incident register is a small sample; terrain is a per-locality constant
+  (not SRTM DEM). Live weather is Open-Meteo/ERA5 until an IMD key is
+  available, and OpenWeatherMap when configured.
+- Ward structures for six panchayats are LSG-typical models (Kumily is real)
+  until Census ward tables are dropped in via
+  `data/static/wards_overrides.csv`.
+- The ML models are validated on rainfall; validating them against actual
+  2018–2020 landslide/flood outcomes is the recommended next step (a backtest
+  of the alert engine).
+- Not affiliated with or endorsed by KSDMA, IMD or any government body.
 
----
-
-## 📡 API Usage Examples
-
-### Get all Danger Indices
-
-```bash
-curl http://localhost:8000/index | jq
-```
-
-### Get Kumily index
-
-```bash
-curl http://localhost:8000/index/Kumily | jq
-```
-
-### Get incidents
-
-```bash
-curl http://localhost:8000/incidents | jq
-```
-
-### Get summary
-
-```bash
-curl http://localhost:8000/summary | jq
-```
-
-### View map
-
-```bash
-open http://localhost:8000/map
-```
-
----
-
-## 🚀 Deployment
-
-### Local Development
-```bash
-streamlit run frontend/app.py
-```
-
-### Server (Docker Optional)
-
-```dockerfile
-FROM python:3.9
-WORKDIR /app
-COPY . .
-RUN pip install -r requirements.txt
-CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501"]
-```
-
-```bash
-docker build -t idukki-danger-index .
-docker run -p 8501:8501 idukki-danger-index
-```
-
-### Production Integration
-
-- Run `api/server.py` as a daemon (systemd, supervisor, etc.)
-- Set up cron to refresh data 2× daily (6 AM, 6 PM IST)
-- Expose `/index`, `/map`, `/incidents` to government SMS/email alert systems
-- Log all alerts for audit/improvement
-
----
-
-## 📚 Documentation
-
-- **[METHODOLOGY.md](docs/METHODOLOGY.md)** — Detailed formulas, sub-score definitions, data rationale
-- **[DATA_SOURCES.md](docs/DATA_SOURCES.md)** — How to fetch IMD, NASA, KSDMA data (in progress)
-- **[API_REFERENCE.md](docs/API_REFERENCE.md)** — Complete API endpoint reference (in progress)
-
----
-
-## ⚠️ Important Notes
-
-1. **This is a forecast tool, not a guarantee.** Always follow official warnings and evacuation orders.
-2. **Data latency:** Forecasts updated 2× daily. Real-time hazards may emerge between updates.
-3. **Locality resolution:** Index computed at panchayat level. Micro-variations (e.g., a specific slope) not captured.
-4. **Emergency:** If in doubt or seeing weather deteriorate, **call 112 or 1077 immediately.**
-
----
-
-## 🤝 Contributing
-
-To improve the system:
-
-1. Report inaccurate incident records or missing data sources
-2. Suggest UI/UX improvements for non-technical residents
-3. Test with actual residents and provide feedback
-4. Help integrate with government alert systems
-
----
-
-## 📜 License
-
-[To be determined by project governance]
-
----
-
-## 📞 Support
-
-- **App Issues:** Open an issue in the repository
-- **Data Questions:** Contact KSDMA or IMD directly
-- **Emergency:** **112 (national) or 1077 (Kerala Disaster Helpline)**
-
----
-
-## 🎯 Project Goals (1-Week Deadline)
-
-- ✅ Forecast engine ingesting IMD, NASA, KSDMA public data
-- ✅ Composite Danger Index (3 sub-scores → 4-tier output)
-- ✅ Colour-coded interactive map (Folium)
-- ✅ Resident-facing Streamlit app (plain-language, no jargon)
-- ✅ REST API for government integration
-- ✅ Historical incident overlay
-- ✅ Documentation of methodology
-
----
-
-**Version:** 1.0  
-**Last Updated:** September 2026  
-**Author:** Idukki Monsoon Danger Index Team
+*An SSR / college-demo project by students — built openly so reviewers can
+read every formula, number and limitation.*

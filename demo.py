@@ -5,9 +5,13 @@ Tests all components and generates sample output
 """
 
 import sys
-sys.path.insert(0, '/home/homie/Projects/SSR_system')
+import os
 
-from data.fetcher import fetch_all_data_for_locality, LOCALITIES
+# Ensure the project root is importable no matter where this script is run from
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from data.fetcher import (fetch_all_data_for_locality, extract_current_weather,
+                          LOCALITIES)
 from index.calculator import compute_index_for_locality
 from index.map_generator import generate_danger_map
 import pandas as pd
@@ -29,23 +33,17 @@ def demo():
     
     all_indices = {}
     all_incidents = pd.DataFrame()
+    fetched_data = {}
     
     for i, locality in enumerate(sorted(LOCALITIES.keys()), 1):
         try:
             data = fetch_all_data_for_locality(locality)
+            fetched_data[locality] = data
             
-            # Extract weather
-            rainfall_df = data['rainfall_forecast']
-            current_rainfall = rainfall_df['rainfall_mm'].iloc[-1] if not rainfall_df.empty else 100
+            # Extract current conditions (nearest forecast day, not the last one)
+            weather = extract_current_weather(data)
             
-            weather = {
-                'rainfall_mm': current_rainfall,
-                'wind_mps': data['wind_data']['wind_speed_mps'],
-                'humidity_pct': data['humidity_data']['relative_humidity_pct'],
-                'cloud_cover_pct': data['cloud_cover']['cloud_cover_pct']
-            }
-            
-            print(f"{i}. {locality:15} → Rainfall: {current_rainfall:6.1f} mm, "
+            print(f"{i}. {locality:15} → Rainfall: {weather['rainfall_mm']:6.1f} mm, "
                   f"Wind: {weather['wind_mps']:5.1f} m/s, Humidity: {weather['humidity_pct']:.0f}%")
             
             if all_incidents.empty and not data['historical_incidents'].empty:
@@ -59,20 +57,10 @@ def demo():
     print("Computing 4-tier Danger Index for each locality...")
     print()
     
-    for locality in sorted(LOCALITIES.keys()):
+    for locality in sorted(fetched_data.keys()):
         try:
-            data = fetch_all_data_for_locality(locality)
-            rainfall_df = data['rainfall_forecast']
-            current_rainfall = rainfall_df['rainfall_mm'].iloc[-1] if not rainfall_df.empty else 100
-            
-            weather = {
-                'rainfall_mm': current_rainfall,
-                'wind_mps': data['wind_data']['wind_speed_mps'],
-                'humidity_pct': data['humidity_data']['relative_humidity_pct'],
-                'cloud_cover_pct': data['cloud_cover']['cloud_cover_pct']
-            }
-            
-            result = compute_index_for_locality(locality, weather)
+            result = compute_index_for_locality(
+                locality, extract_current_weather(fetched_data[locality]))
             all_indices[locality] = result
             
             # Display with tier icon
@@ -159,7 +147,7 @@ def demo():
     print_section("DEMO COMPLETE ✓")
     
     print("Next Steps:")
-    print("  1. Run Streamlit UI: streamlit run frontend/app.py")
+    print("  1. Run the dashboard + API: python3 api/server.py (open http://localhost:8000)")
     print("  2. Run API Server: python3 api/server.py")
     print("  3. View Demo Map: open /tmp/idukki_demo_map.html")
     print("\nData Sources Used:")
