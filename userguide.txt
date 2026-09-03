@@ -1,0 +1,920 @@
+================================================================================
+                    IDUKKI MONSOON DANGER INDEX
+                          USER GUIDE & COMMANDS
+                       Complete System User Manual
+================================================================================
+
+Version: 1.0
+Date: September 2026
+Location: /home/homie/Projects/SSR_system
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+
+1. PREREQUISITES
+2. INSTALLATION & SETUP
+3. RUNNING THE SYSTEM
+4. INTERACTIVE MENU (QUICK START)
+5. RUNNING INDIVIDUAL COMPONENTS
+6. API REFERENCE & COMMANDS
+7. TESTING & VERIFICATION
+8. TROUBLESHOOTING
+9. COMMON TASKS
+10. EMERGENCY CONTACTS
+
+================================================================================
+1. PREREQUISITES
+================================================================================
+
+Before running this system, ensure you have:
+
+✓ Python 3.9 or higher
+✓ pip (Python package manager)
+✓ Internet connection (for data fetching)
+✓ ~500 MB free disk space
+✓ Linux/Mac/Windows with bash or terminal access
+
+CHECK PYTHON VERSION:
+    python3 --version
+    # Should show: Python 3.9.x or higher
+
+CHECK PIP:
+    pip3 --version
+    # Should show version information
+
+================================================================================
+2. INSTALLATION & SETUP
+================================================================================
+
+STEP 1: Navigate to project directory
+
+    cd /home/homie/Projects/SSR_system
+
+STEP 2: Check directory structure
+
+    ls -la
+    # Should show: data/, index/, api/, frontend/, docs/, README.md, etc.
+
+STEP 3: Install Python dependencies
+
+    pip3 install -r requirements.txt
+
+    # This installs:
+    # - pandas, numpy, scikit-learn (data processing)
+    # - geopandas, folium, shapely (geospatial)
+    # - fastapi, uvicorn, pydantic (API)
+    # - streamlit (web UI)
+    # - requests (data fetching)
+    # - Other utilities
+
+    # Installation takes ~2-5 minutes on first run
+
+STEP 4: Verify installation
+
+    python3 -c "import pandas, folium, streamlit, fastapi; print('✓ All dependencies installed')"
+
+    # Should print: ✓ All dependencies installed
+
+STEP 5: Make scripts executable
+
+    chmod +x quick-start.sh demo.py
+
+    # Allows running scripts directly
+
+================================================================================
+3. RUNNING THE SYSTEM (QUICK START)
+================================================================================
+
+OPTION A: INTERACTIVE MENU (RECOMMENDED FOR FIRST-TIME USERS)
+
+    cd /home/homie/Projects/SSR_system
+    ./quick-start.sh
+
+    # Interactive menu with options:
+    # 1. Run Resident Web App (Streamlit)
+    # 2. Run API Server (FastAPI)
+    # 3. Run End-to-End Demo
+    # 4. View Documentation
+    # 5. Generate Interactive Map
+    # 6. Exit
+
+    # Follow on-screen instructions
+
+OPTION B: RUN ALL COMPONENTS MANUALLY
+
+    Terminal 1 - Streamlit App:
+        cd /home/homie/Projects/SSR_system
+        streamlit run frontend/app.py
+        # Opens at http://localhost:8501
+
+    Terminal 2 - API Server:
+        cd /home/homie/Projects/SSR_system
+        python3 api/server.py
+        # Runs at http://localhost:8000
+
+    Terminal 3 - Monitor (Optional):
+        cd /home/homie/Projects/SSR_system
+        python3 demo.py
+        # Shows system status in terminal
+
+================================================================================
+4. INTERACTIVE MENU (QUICK START)
+================================================================================
+
+LAUNCH QUICK-START MENU:
+
+    ./quick-start.sh
+
+MENU OPTIONS EXPLAINED:
+
+Option 1: Run Resident Web App
+    ✓ Launches Streamlit web interface
+    ✓ Access at http://localhost:8501
+    ✓ Select your locality → see Danger Index
+    ✓ View forecast, guidance, map
+    ✓ Press Ctrl+C to stop
+
+Option 2: Run API Server
+    ✓ Launches FastAPI REST backend
+    ✓ Access at http://localhost:8000
+    ✓ Interactive docs at http://localhost:8000/docs
+    ✓ Use for government integration
+    ✓ Press Ctrl+C to stop
+
+Option 3: Run Demo
+    ✓ Shows all system capabilities
+    ✓ No server required
+    ✓ Demonstrates:
+      - Data fetching from IMD, NASA, KSDMA
+      - Danger Index calculation
+      - Map generation
+      - Sample resident view
+      - Historical incidents
+
+Option 4: View Documentation
+    ✓ Shows available documentation files
+    ✓ Option to open README.md
+    ✓ Files: README.md, METHODOLOGY.md, API_REFERENCE.md, etc.
+
+Option 5: Generate Interactive Map
+    ✓ Generates current danger map
+    ✓ Shows all localities with current risk levels
+    ✓ Saved as: idukki_danger_map.html
+    ✓ Open in any web browser
+
+Option 6: Exit
+    ✓ Closes the menu
+
+================================================================================
+5. RUNNING INDIVIDUAL COMPONENTS
+================================================================================
+
+A. RESIDENT WEB APP (STREAMLIT)
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       streamlit run frontend/app.py
+
+   WHAT IT DOES:
+       • Launches web interface at http://localhost:8501
+       • Non-technical resident-facing UI
+       • Select locality → see current Danger Index
+       • View sub-scores, weather, forecast
+       • Check nearby incidents
+       • Embedded interactive map
+
+   FEATURES:
+       ✓ Locality selector (dropdown)
+       ✓ Danger Index (colour-coded)
+       ✓ Three sub-scores with explanations
+       ✓ 7-day rainfall forecast
+       ✓ Plain-language guidance (tier-specific)
+       ✓ Past incidents nearby
+       ✓ Interactive map button
+       ✓ Emergency contact info
+
+   ACCESS:
+       Open browser: http://localhost:8501
+
+   STOP:
+       Press Ctrl+C in terminal
+
+   CUSTOMIZE LOCALITY:
+       Edit: data/fetcher.py
+       Find: LOCALITIES = { ... }
+       Add your location with lat/lon
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+B. API SERVER (FASTAPI)
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       python3 api/server.py
+
+   WHAT IT DOES:
+       • Launches REST API at http://localhost:8000
+       • Serves Danger Index data as JSON
+       • Provides endpoints for all system functions
+       • Ready for government integration
+
+   ACCESS:
+       • API: http://localhost:8000
+       • Interactive Docs: http://localhost:8000/docs
+       • ReDoc: http://localhost:8000/redoc
+
+   STOP:
+       Press Ctrl+C in terminal
+
+   KEY ENDPOINTS:
+       GET /              → API info page
+       GET /health        → System status
+       GET /localities    → List all areas
+       GET /index         → All Danger Indices
+       GET /index/{loc}   → Single locality
+       GET /map           → Interactive map
+       GET /incidents     → Historical incidents
+       GET /summary       → Statistics
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+C. END-TO-END DEMO
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       python3 demo.py
+
+   WHAT IT DOES:
+       • Demonstrates entire system in terminal
+       • Fetches data for all localities
+       • Computes Danger Index
+       • Generates statistics
+       • Creates interactive map
+       • Shows sample resident view
+       • Displays historical incidents
+
+   OUTPUT INCLUDES:
+       ✓ Weather data for each locality
+       ✓ Danger Index tier for each area
+       ✓ Sub-score breakdown
+       ✓ Tier summary statistics
+       ✓ Average danger score
+       ✓ Map file location
+       ✓ Sample locality details
+       ✓ Historical incident summary
+
+   NO SERVER REQUIRED:
+       • Runs standalone
+       • Completes in 30-60 seconds
+       • No network dependencies after data cached
+
+   EXAMPLE OUTPUT:
+       🔴 Kumily          | HIGH (0.67) | E:0.56 S:0.83 H:0.60
+       🔴 Munnar          | EXTREME (0.78) | E:0.72 S:0.76 H:0.88
+       ...
+       Tier Breakdown:
+         🟢 Low: 0 localities
+         🟠 Moderate: 2 localities
+         🔴 High: 3 localities
+         🔴 Extreme: 2 localities
+
+================================================================================
+6. API REFERENCE & COMMANDS
+================================================================================
+
+A. START API SERVER
+   ════════════════════════════════════════════════════════════════════════
+
+   python3 api/server.py
+
+   Server runs at: http://localhost:8000
+
+
+B. GET ALL LOCALITIES
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/localities
+
+   RESPONSE:
+       {
+         "localities": ["Adimali", "Idukki", "Kattappana", "Kumily", "Munnar", "Nedumkandam", "Peermedu"],
+         "count": 7
+       }
+
+   WITH FORMATTING:
+       curl http://localhost:8000/localities | jq
+       curl http://localhost:8000/localities | jq '.localities'
+
+
+C. GET ALL DANGER INDICES
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/index
+
+   RETURNS:
+       Array of objects, each containing:
+       - locality: area name
+       - tier: 'Low' | 'Moderate' | 'High' | 'Extreme'
+       - composite_score: 0-1
+       - environmental_severity: 0-1
+       - structural_risk: 0-1
+       - human_threat_level: 0-1
+       - color: hex color code
+       - description: plain-language explanation
+       - latitude/longitude
+
+   WITH FORMATTING:
+       curl http://localhost:8000/index | jq
+       curl http://localhost:8000/index | jq '.[] | {locality, tier, composite_score}'
+
+   FILTER BY TIER:
+       curl http://localhost:8000/index | jq '.[] | select(.tier == "Extreme")'
+
+   COUNT BY TIER:
+       curl http://localhost:8000/index | jq 'group_by(.tier) | map({tier: .[0].tier, count: length})'
+
+
+D. GET SINGLE LOCALITY INDEX
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/index/Kumily
+
+   REPLACE "Kumily" WITH:
+       Adimali, Idukki, Kattappana, Munnar, Nedumkandam, Peermedu
+
+   EXAMPLE - Get Kumily index:
+       curl http://localhost:8000/index/Kumily | jq
+
+   GET ONLY TIER:
+       curl http://localhost:8000/index/Kumily | jq '.tier'
+
+   GET ONLY SCORE:
+       curl http://localhost:8000/index/Kumily | jq '.composite_score'
+
+   GET DESCRIPTION:
+       curl http://localhost:8000/index/Kumily | jq '.description'
+
+
+E. GET HISTORICAL INCIDENTS
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/incidents
+
+   RETURNS:
+       Array of incidents with:
+       - latitude, longitude (coordinates)
+       - incident_type: 'landslide' | 'flood' | 'dam' | 'debris'
+       - year: incident year
+       - severity: 'low' | 'moderate' | 'high' | 'extreme'
+       - location: area name
+       - description: details
+
+   FILTER BY TYPE:
+       curl http://localhost:8000/incidents | jq '.[] | select(.incident_type == "landslide")'
+
+   FILTER BY YEAR:
+       curl http://localhost:8000/incidents | jq '.[] | select(.year >= 2019)'
+
+   FILTER BY SEVERITY:
+       curl http://localhost:8000/incidents | jq '.[] | select(.severity == "extreme")'
+
+   COUNT BY TYPE:
+       curl http://localhost:8000/incidents | jq 'group_by(.incident_type) | map({type: .[0].incident_type, count: length})'
+
+
+F. GET INTERACTIVE MAP
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/map > /tmp/map.html
+
+   OPEN IN BROWSER:
+       open /tmp/map.html  (macOS)
+       xdg-open /tmp/map.html  (Linux)
+       start /tmp/map.html  (Windows)
+
+   OR ACCESS DIRECTLY:
+       http://localhost:8000/map  (in web browser)
+
+
+G. GET SUMMARY STATISTICS
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/summary
+
+   RETURNS:
+       {
+         "total_localities": 7,
+         "tier_breakdown": {
+           "Low": 0,
+           "Moderate": 1,
+           "High": 4,
+           "Extreme": 2
+         },
+         "average_danger_score": 0.65,
+         "last_computed": "2026-09-01T22:00:00",
+         "status": "OK"
+       }
+
+   GET ONLY EXTREME COUNT:
+       curl http://localhost:8000/summary | jq '.tier_breakdown.Extreme'
+
+   GET AVERAGE SCORE:
+       curl http://localhost:8000/summary | jq '.average_danger_score'
+
+
+H. HEALTH CHECK
+   ════════════════════════════════════════════════════════════════════════
+
+   COMMAND:
+       curl http://localhost:8000/health
+
+   RETURNS:
+       {
+         "status": "healthy",
+         "last_update": "2026-09-01T22:00:00",
+         "localities_computed": 7,
+         "incidents_loaded": 5
+       }
+
+
+I. INTERACTIVE API DOCUMENTATION
+   ════════════════════════════════════════════════════════════════════════
+
+   SWAGGER UI (Try endpoints interactively):
+       http://localhost:8000/docs
+
+   REDOC (Read-only documentation):
+       http://localhost:8000/redoc
+
+   ROOT INFO:
+       http://localhost:8000/
+
+================================================================================
+7. TESTING & VERIFICATION
+================================================================================
+
+A. QUICK SYSTEM TEST
+   ════════════════════════════════════════════════════════════════════════
+
+   Run quick system verification:
+       python3 -c "
+from data.fetcher import fetch_all_data_for_locality
+from index.calculator import compute_index_for_locality
+
+print('Testing Kumily locality...')
+data = fetch_all_data_for_locality('Kumily')
+result = compute_index_for_locality('Kumily', {
+    'rainfall_mm': 150,
+    'wind_mps': 12,
+    'humidity_pct': 90,
+    'cloud_cover_pct': 95
+})
+
+print(f'✓ Tier: {result[\"tier\"]}')
+print(f'✓ Score: {result[\"composite_score\"]}')
+print(f'✓ Environmental Severity: {result[\"environmental_severity\"]}')
+print(f'✓ Structural Risk: {result[\"structural_risk\"]}')
+print(f'✓ Human Threat: {result[\"human_threat\"]}')
+print('✓ System working correctly!')
+"
+
+
+B. DATA FETCHER TEST
+   ════════════════════════════════════════════════════════════════════════
+
+   Test data fetching:
+       python3 -c "from data.fetcher import fetch_all_data_for_locality; print(fetch_all_data_for_locality('Kumily'))"
+
+
+C. INDEX CALCULATOR TEST
+   ════════════════════════════════════════════════════════════════════════
+
+   Test index calculation:
+       python3 -c "from index.calculator import compute_index_for_locality; result = compute_index_for_locality('Kumily', {'rainfall_mm': 100, 'wind_mps': 8, 'humidity_pct': 85, 'cloud_cover_pct': 80}); print(result)"
+
+
+D. MAP GENERATOR TEST
+   ════════════════════════════════════════════════════════════════════════
+
+   Test map generation:
+       python3 -c "
+from index.map_generator import generate_danger_map
+from data.fetcher import fetch_all_data_for_locality, LOCALITIES
+from index.calculator import compute_index_for_locality
+import pandas as pd
+
+all_indices = {}
+all_incidents = pd.DataFrame()
+
+for locality in ['Kumily', 'Peermedu']:
+    data = fetch_all_data_for_locality(locality)
+    rainfall_df = data['rainfall_forecast']
+    current_rainfall = rainfall_df['rainfall_mm'].iloc[-1] if not rainfall_df.empty else 100
+    
+    weather = {
+        'rainfall_mm': current_rainfall,
+        'wind_mps': data['wind_data']['wind_speed_mps'],
+        'humidity_pct': data['humidity_data']['relative_humidity_pct'],
+        'cloud_cover_pct': data['cloud_cover']['cloud_cover_pct']
+    }
+    
+    result = compute_index_for_locality(locality, weather)
+    all_indices[locality] = result
+    
+    if all_incidents.empty:
+        all_incidents = data['historical_incidents']
+
+generate_danger_map(all_indices, all_incidents, '/tmp/test_map.html')
+print('✓ Map generated at /tmp/test_map.html')
+"
+
+
+E. API SERVER TEST (after starting server)
+   ════════════════════════════════════════════════════════════════════════
+
+   Health check:
+       curl http://localhost:8000/health
+
+   Get all indices:
+       curl http://localhost:8000/index | jq '.[] | {locality, tier}'
+
+   Get single locality:
+       curl http://localhost:8000/index/Kumily | jq
+
+   All should return valid JSON without errors
+
+================================================================================
+8. TROUBLESHOOTING
+================================================================================
+
+A. PYTHON NOT FOUND
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       python: command not found
+
+   SOLUTION:
+       Use python3 instead of python
+       python3 --version
+
+   If python3 also not found:
+       • Install Python 3.9+ from python.org
+       • Or use package manager: apt-get, brew, etc.
+
+
+B. DEPENDENCIES NOT INSTALLED
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       ModuleNotFoundError: No module named 'pandas'
+
+   SOLUTION:
+       Reinstall dependencies:
+       pip3 install -r requirements.txt
+
+   Force reinstall:
+       pip3 install --force-reinstall -r requirements.txt
+
+
+C. PORT ALREADY IN USE
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR (Streamlit):
+       Address already in use
+
+   SOLUTION:
+       Kill existing process:
+       lsof -ti:8501 | xargs kill -9
+
+       Or use different port:
+       streamlit run frontend/app.py --server.port=8502
+
+   ERROR (FastAPI):
+       Address already in use
+
+   SOLUTION:
+       Kill existing process:
+       lsof -ti:8000 | xargs kill -9
+
+       Or use different port:
+       Edit api/server.py, change port=8000 to port=8001
+
+
+D. DATA NOT LOADING
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       Error fetching rainfall data
+
+   SOLUTION:
+       Check internet connection:
+       ping google.com
+
+       Verify data sources are accessible:
+       curl https://mausam.imd.gov.in
+
+
+E. MAP NOT GENERATING
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       Error generating map
+
+   SOLUTION:
+       Check if folium is installed:
+       python3 -c "import folium; print(folium.__version__)"
+
+       Reinstall:
+       pip3 install --force-reinstall folium
+
+
+F. STREAMLIT NOT RESPONSIVE
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       App doesn't load or is slow
+
+   SOLUTION:
+       Clear Streamlit cache:
+       rm -rf ~/.streamlit/
+
+       Restart app:
+       streamlit run frontend/app.py --logger.level=debug
+
+
+G. API SERVER NOT RESPONDING
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       Cannot connect to http://localhost:8000
+
+   SOLUTION:
+       Check if server is running:
+       curl http://localhost:8000/health
+
+       If not running:
+       python3 api/server.py
+
+       Check firewall:
+       sudo ufw allow 8000  (Linux)
+
+
+H. PERMISSION DENIED
+   ════════════════════════════════════════════════════════════════════════
+
+   ERROR:
+       ./quick-start.sh: Permission denied
+
+   SOLUTION:
+       Make executable:
+       chmod +x quick-start.sh
+
+       Then run:
+       ./quick-start.sh
+
+================================================================================
+9. COMMON TASKS
+================================================================================
+
+A. ADD A NEW LOCALITY
+   ════════════════════════════════════════════════════════════════════════
+
+   STEP 1: Edit data/fetcher.py
+
+   Find this section:
+       LOCALITIES = {
+           'Kumily': {'lat': 9.655, 'lon': 76.775},
+           ...
+       }
+
+   Add your location:
+       'NewPlace': {'lat': 9.XXX, 'lon': 76.XXX},
+
+   STEP 2: Update population and terrain risk (optional)
+
+   In index/calculator.py, find:
+       LOCALITY_POPULATION = { ... }
+       TERRAIN_SLOPE_RISK = { ... }
+
+   Add entries for your locality
+
+   STEP 3: Restart the app
+
+   For Streamlit:
+       Stop (Ctrl+C) and restart:
+       streamlit run frontend/app.py
+
+   For API:
+       Stop (Ctrl+C) and restart:
+       python3 api/server.py
+
+
+B. CHANGE DANGER INDEX WEIGHTS
+   ════════════════════════════════════════════════════════════════════════
+
+   Edit: index/calculator.py
+
+   Find: calculate_composite_index() method
+
+   Change these values (must sum to 1.0):
+       composite_score = (
+           0.40 * environmental_severity +  # Change 0.40
+           0.35 * structural_risk +         # Change 0.35
+           0.25 * human_threat_level        # Change 0.25
+       )
+
+   Also adjust thresholds:
+       if composite_score < 0.25:
+           tier = 'Low'
+       elif composite_score < 0.50:
+           tier = 'Moderate'
+       elif composite_score < 0.75:
+           tier = 'High'
+       else:
+           tier = 'Extreme'
+
+
+C. CUSTOMIZE TIER COLORS
+   ════════════════════════════════════════════════════════════════════════
+
+   Edit: index/calculator.py
+
+   Find: get_tier_color() method
+
+   Change hex colors:
+       colors = {
+           'Low': '#2ecc71',       # Green
+           'Moderate': '#f39c12',  # Orange
+           'High': '#e74c3c',      # Red
+           'Extreme': '#8b0000'    # Dark red
+       }
+
+
+D. EXPORT DATA TO CSV
+   ════════════════════════════════════════════════════════════════════════
+
+   All localities to CSV:
+       curl http://localhost:8000/index | jq -r '.[] | [.locality, .tier, .composite_score, .environmental_severity] | @csv' > danger_index.csv
+
+   Incidents to CSV:
+       curl http://localhost:8000/incidents | jq -r '.[] | [.locality, .incident_type, .year, .severity] | @csv' > incidents.csv
+
+
+E. SCHEDULE AUTOMATIC UPDATES
+   ════════════════════════════════════════════════════════════════════════
+
+   Add to crontab:
+       crontab -e
+
+   Add these lines (updates 2x daily):
+       # Run demo and save output
+       0 6 * * * cd /home/homie/Projects/SSR_system && python3 demo.py >> /tmp/idukki_demo.log 2>&1
+
+       0 18 * * * cd /home/homie/Projects/SSR_system && python3 demo.py >> /tmp/idukki_demo.log 2>&1
+
+   View results:
+       tail -f /tmp/idukki_demo.log
+
+
+F. BACKUP DATA
+   ════════════════════════════════════════════════════════════════════════
+
+   Create backup:
+       tar -czf idukki_backup_$(date +%Y%m%d).tar.gz \
+         /home/homie/Projects/SSR_system
+
+   List backups:
+       ls -lh idukki_backup*.tar.gz
+
+   Restore backup:
+       tar -xzf idukki_backup_20260901.tar.gz
+
+
+G. VIEW LOGS
+   ════════════════════════════════════════════════════════════════════════
+
+   Streamlit logs:
+       ~/.streamlit/logs/
+
+   FastAPI logs:
+       Print to console when running python3 api/server.py
+
+   Demo logs:
+       python3 demo.py 2>&1 | tee demo_output.log
+
+
+H. MONITOR SYSTEM HEALTH
+   ════════════════════════════════════════════════════════════════════════
+
+   Check if API is running:
+       curl http://localhost:8000/health | jq
+
+   Check if Streamlit is running:
+       curl http://localhost:8501/_stcore/health
+
+   Check Python processes:
+       ps aux | grep python3
+
+   Kill specific process:
+       kill <PID>
+
+================================================================================
+10. EMERGENCY CONTACTS
+================================================================================
+
+When in doubt or seeing danger:
+
+   National Emergency Number:
+       112
+
+   Kerala Disaster Management Authority Helpline:
+       1077
+
+   Local Panchayat Emergency:
+       Check notice board for local numbers
+
+   Check your Danger Index app for current guidance!
+
+================================================================================
+QUICK REFERENCE CARD
+================================================================================
+
+INSTALLATION:
+    cd /home/homie/Projects/SSR_system
+    pip3 install -r requirements.txt
+
+RUN QUICK-START MENU:
+    ./quick-start.sh
+
+RUN RESIDENT APP:
+    streamlit run frontend/app.py
+    # Open: http://localhost:8501
+
+RUN API SERVER:
+    python3 api/server.py
+    # Open: http://localhost:8000/docs
+
+RUN DEMO:
+    python3 demo.py
+
+COMMON API CALLS:
+    curl http://localhost:8000/index | jq
+    curl http://localhost:8000/index/Kumily | jq
+    curl http://localhost:8000/map > map.html
+    curl http://localhost:8000/incidents | jq
+    curl http://localhost:8000/summary | jq
+
+VIEW DOCUMENTATION:
+    cat README.md
+    cat docs/METHODOLOGY.md
+    cat docs/API_REFERENCE.md
+
+KILL SERVERS:
+    lsof -ti:8501 | xargs kill -9  # Streamlit
+    lsof -ti:8000 | xargs kill -9  # FastAPI
+
+================================================================================
+GETTING HELP
+================================================================================
+
+Questions about the system?
+    Read: README.md
+
+Questions about methodology?
+    Read: docs/METHODOLOGY.md
+
+Questions about API?
+    Read: docs/API_REFERENCE.md
+
+Questions about data sources?
+    Read: docs/DATA_SOURCES.md
+
+Questions about the project?
+    Read: PROJECT_SUMMARY.md
+
+Want to see it in action?
+    Run: python3 demo.py
+
+Interactive API Docs:
+    Start API server, then visit: http://localhost:8000/docs
+
+================================================================================
+END OF USER GUIDE
+================================================================================
+
+Last Updated: September 2026
+Version: 1.0
+Location: /home/homie/Projects/SSR_system/userguide.txt
+
+For latest updates and documentation, visit:
+    /home/homie/Projects/SSR_system/README.md
+    /home/homie/Projects/SSR_system/PROJECT_SUMMARY.md
+
+================================================================================
