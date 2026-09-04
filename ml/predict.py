@@ -25,7 +25,10 @@ from ml.train import (CLS_FEATURES, LSTM_WINDOW, MODEL_DIR,  # noqa: E402
 def _latest_window_and_row(locality: str, today_mm: float):
     """Causal features ending today: (LSTM window, classifier row, n_days)."""
     loc = _localities()[locality]
-    hist = load_daily_rainfall(loc['lat'], loc['lon'], refresh_trailing=False)
+    # Inference must never trigger archive downloads: use only what is
+    # already cached on disk (training/`build dataset` populates it).
+    hist = load_daily_rainfall(loc['lat'], loc['lon'],
+                               refresh_trailing=False, fetch_missing=False)
     if hist.empty:
         return None
 

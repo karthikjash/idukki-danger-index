@@ -54,6 +54,31 @@ CACHE_VALIDITY_HOURS = 6
 # Live weather source
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
+
+def _get_with_retry(url: str, params: dict, timeout: int, attempts: int = 3,
+                    label: str = 'fetch'):
+    """GET with short retries for the flaky satellite link.
+
+    This link drops a small fraction of requests (DNS stalls, mid-body read
+    timeouts); a retry or two recovers most of them, which is what keeps
+    every locality on the live feed instead of falling back to modelled
+    estimates. Returns the requests.Response or None after exhausting retries.
+    """
+    import time as _time
+    last = None
+    for i in range(attempts):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            r.raise_for_status()
+            return r
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if i < attempts - 1:
+                _time.sleep(1.5 * (i + 1))
+    logger.warning(f"Open-Meteo {label} failed after {attempts} tries "
+                   f"({params.get('latitude')},{params.get('longitude')}): {last}")
+    return None
+
 # Idukki district bounds (inner areas: Peermedu, Kumily, Adimali panchayats)
 IDUKKI_INNER_BOUNDS = {
     'north': 9.75,
@@ -166,9 +191,11 @@ class IMDDataFetcher:
             'precipitation_unit': 'mm',
             'timezone': 'Asia/Kolkata',
         }
+        response = _get_with_retry(OPEN_METEO_FORECAST_URL, params, timeout=25,
+                                   label='current')
+        if response is None:
+            return None
         try:
-            response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=8)
-            response.raise_for_status()
             current = response.json().get('current')
             if not current:
                 return None
@@ -204,9 +231,11 @@ class IMDDataFetcher:
             'precipitation_unit': 'mm',
             'timezone': 'Asia/Kolkata',
         }
+        response = _get_with_retry(OPEN_METEO_FORECAST_URL, params, timeout=25,
+                                   label='rainfall')
+        if response is None:
+            return None
         try:
-            response = requests.get(OPEN_METEO_FORECAST_URL, params=params, timeout=8)
-            response.raise_for_status()
             daily = response.json().get('daily')
             if not daily:
                 return None

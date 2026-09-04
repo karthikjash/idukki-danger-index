@@ -111,12 +111,17 @@ def _ensure_range(lat: float, lon: float, start: int, end: int,
     return df if not df.empty else None
 
 
-def load_daily_rainfall(lat: float, lon: float, refresh_trailing: bool = True) -> pd.DataFrame:
+def load_daily_rainfall(lat: float, lon: float, refresh_trailing: bool = True,
+                        fetch_missing: bool = True) -> pd.DataFrame:
     """Concatenated daily rainfall for one location, cached on disk.
 
     Coverage-based: cached span files are inventoried and only the missing
     years are fetched (in <=SPAN_MAX_YEARS chunks, split in half again on
     failure), so interrupted runs simply resume where they stopped.
+
+    fetch_missing=False returns only what is already cached on disk and never
+    touches the network - used by inference (predict_tomorrow) so a request
+    never stalls on multi-year archive downloads. Training passes True.
     """
     today = datetime.now().date()
     cur_year = today.year
@@ -137,7 +142,7 @@ def load_daily_rainfall(lat: float, lon: float, refresh_trailing: bool = True) -
         frames.append(_read_span_cache(path, is_trailing, False))
 
     missing = [y for y in range(START_YEAR, cur_year + 1) if y not in covered]
-    if missing:
+    if missing and fetch_missing:
         # group consecutive missing years into <=SPAN_MAX_YEARS chunks
         chunks, start = [], missing[0]
         prev = missing[0]

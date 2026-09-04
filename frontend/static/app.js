@@ -70,6 +70,9 @@ const I18N = [
   ['Live data', 'തത്സമയ ഡാറ്റ'],
   ['Live feed', 'തത്സമയ ഫീഡ്'],
   ['Modelled data', 'മോഡൽ ഡാറ്റ'],
+  ['Partial live feed', 'ഭാഗിക തത്സമയ ഫീഡ്'],
+  ['areas live.', 'പ്രദേശങ്ങൾ തത്സമയം.'],
+  ['The rest use modelled estimates — retry to fetch them.', 'മറ്റുള്ളവ മോഡൽ കണക്കുകളാണ് — വീണ്ടും ശ്രമിക്കുക.'],
   ['District status · now', 'ജില്ലാ നില · ഇപ്പോൾ'],
   ['district risk score', 'ജില്ലാ അപകട സ്കോർ'],
   ['District conditions are calm', 'ജില്ലയിലെ സ്ഥിതി ശാന്തമാണ്'],
@@ -77,6 +80,8 @@ const I18N = [
   ['Elevated conditions in', 'ഉയർന്ന അപകടനിലയിലുള്ളത്'],
   ['Severe conditions in', 'ഗുരുതര അവസ്ഥയിലുള്ളത്'],
   ['of', 'എന്നിവയിൽ'],
+  ['localities', 'പഞ്ചായത്തുകൾ'],
+  ['monitored panchayats', 'നിരീക്ഷിക്കുന്ന പഞ്ചായത്തുകൾ'],
   ['Follow the guidance for your area.', 'നിങ്ങളുടെ മേഖലയ്ക്കുള്ള നിർദേശങ്ങൾ പാലിക്കുക.'],
   ['monsoon', 'മഴക്കാലം'],
   ['Search panchayat, risk level, hazard…', 'പഞ്ചായത്ത്, അപകടനില, അപകടം തിരയുക…'],
@@ -98,6 +103,7 @@ const I18N = [
   ['Tap a locality for plain-language guidance, the 7-day danger outlook (tier per day, days ahead) and nearby past incidents. Press', 'ഒരു പ്രദേശം തിരഞ്ഞെടുത്താൽ ലളിതമായ നിർദേശങ്ങൾ, 7 ദിവസത്തെ അപകട പ്രവചനം, സമീപ സംഭവങ്ങൾ എന്നിവ ലഭിക്കും.'],
   ['to search.', 'അമർത്തി തിരയാം.'],
   ['Loading localities…', 'ലോഡ് ചെയ്യുന്നു…'],
+  ['Data unavailable.', 'ഡാറ്റ ലഭ്യമല്ല.'],
   ['Loading 7-day outlook…', '7 ദിവസത്തെ പ്രവചനം ലോഡ് ചെയ്യുന്നു…'],
   ['Loading incidents…', 'സംഭവങ്ങൾ ലോഡ് ചെയ്യുന്നു…'],
   ['Loading weather trends…', 'കാലാവസ്ഥ പ്രവണതകൾ ലോഡ് ചെയ്യുന്നു…'],
@@ -472,9 +478,9 @@ function mlFor(name) {
 }
 
 /* ---------- fetch with timeout ---------- */
-async function fetchJSON(url) {
+async function fetchJSON(url, timeoutMs = 20000) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 20000);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, { signal: ctrl.signal });
     if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
@@ -501,12 +507,26 @@ function applyChrome(summary) {
     ? 'Monsoon season · active'
     : 'Dry season · monsoon risk off-peak';
 
-  const live = summary.data_source === 'live' && summary.localities_on_synthetic === 0;
+  const total = summary.total_localities || 0;
+  const onSynth = summary.localities_on_synthetic || 0;
+  const allLive = onSynth === 0;
+  const partial = onSynth > 0 && onSynth < total;
   const sourcePill = $('#source-pill');
-  sourcePill.dataset.source = live ? 'live' : 'synthetic';
-  sourcePill.textContent = live ? '● Live data' : '⚠ Modelled data';
+  sourcePill.dataset.source = allLive ? 'live' : partial ? 'partial' : 'synthetic';
+  sourcePill.textContent = allLive ? '● Live data'
+    : partial ? '● Partial live data'
+      : '⚠ Modelled data';
 
-  $('#synthetic-banner').classList.toggle('hidden', live);
+  const banner = $('#synthetic-banner');
+  banner.classList.toggle('hidden', allLive);
+  if (!allLive) {
+    $('#banner-title').textContent = partial
+      ? `Partial live feed — ${total - onSynth} of ${total} areas live.`
+      : 'Showing modelled demo data.';
+    $('#banner-text').textContent = partial
+      ? 'The rest use modelled estimates — retry to fetch them.'
+      : 'No live weather feed could be reached — the numbers below are season-aware estimates, not live observations.';
+  }
 }
 
 /* ---------- hero + summary ---------- */
@@ -1376,22 +1396,43 @@ function bindNotifyUI() {
 }
 
 /* ---------- data loading ---------- */
-async function loadAll() {    $('#cards').innerHTML = '<div class="card skeleton">Loading localities…</div>';
+async function loadAll(force) {
+  const firstLoad = !state.summary && state.indices.length === 0;
+  if (firstLoad) $('#cards').innerHTML = '<div class="card skeleton">Loading localities…</div>';
+  const retryBtn = $('#banner-retry');
+  if (force) {
+    retryBtn.textContent = 'Refreshing live feed…';
+    retryBtn.disabled = true;
+  }
   try {
-    const [summary, indices] = await Promise.all([fetchJSON('/summary'), fetchJSON('/index')]);
+    const qs = force ? '?refresh=1' : '';
+    const [summary, indices] = await Promise.all([
+      fetchJSON('/summary' + qs, force ? 120000 : 20000),
+      fetchJSON('/index' + qs, force ? 120000 : 20000),
+    ]);
     state.summary = summary;
     state.indices = Array.isArray(indices) ? indices : [];
     renderSummary(summary);
     renderCards();
   } catch (e) {
-    $('#cards').innerHTML = `
-      <div class="card skeleton" style="grid-column:1/-1;justify-content:flex-start">
-        ⚠ Could not load data — ${esc(e.message)}<br>
-        <span style="font-size:0.85rem;color:var(--faint)">Start the API with <b>python3 api/server.py</b> and refresh.</span>
-      </div>`;
-    $('#synthetic-banner').classList.remove('hidden');
-    $('#hero-tier').textContent = '—';
-    $('#hero-sentence').textContent = 'Data unavailable.';
+    if (firstLoad) {
+      // No data has ever loaded - show the failure state.
+      $('#cards').innerHTML = `
+        <div class="card skeleton" style="grid-column:1/-1;justify-content:flex-start">
+          ⚠ Could not load data — ${esc(e.message)}<br>
+          <span style="font-size:0.85rem;color:var(--faint)">Start the API with <b>python3 api/server.py</b> and refresh.</span>
+        </div>`;
+      $('#synthetic-banner').classList.remove('hidden');
+      $('#hero-tier').textContent = '—';
+      $('#hero-sentence').textContent = 'Data unavailable.';
+    }
+    // Otherwise: a refresh failed. Keep the last good data on screen -
+    // never wipe a working dashboard on a transient network blip.
+  } finally {
+    if (force) {
+      retryBtn.textContent = 'Retry live feed';
+      retryBtn.disabled = false;
+    }
   }
   loadOutlook(); // ENSO + ML outlooks refresh alongside the dashboard
 }
@@ -1453,7 +1494,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('[data-close]').forEach((n) =>
     n.addEventListener('click', closeDrawer));
 
-  $('#banner-retry').addEventListener('click', () => loadAll());
+  $('#banner-retry').addEventListener('click', () => loadAll(true));
 
   bindNotifyUI();
   refreshNotifyStatus();

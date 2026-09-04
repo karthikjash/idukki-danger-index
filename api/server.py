@@ -183,6 +183,32 @@ def compute_all_indices() -> Dict[str, Dict]:
     return indices
 
 
+def _force_live_refresh() -> None:
+    """Drop stale weather/index caches and recompute from the live feed.
+
+    Backs the UI's 'Retry live feed' action - a genuine re-fetch, not a
+    cache re-read. Guarded with a short cooldown so parallel
+    /summary?refresh=1 + /index?refresh=1 calls only compute once.
+    """
+    now = datetime.now()
+    last = _cache.get('last_refresh')
+    if last and (now - last).total_seconds() < 60:
+        return
+    _cache['last_refresh'] = now
+    cache_dir = Path('/tmp/ssr_cache')
+    if cache_dir.exists():
+        for p in cache_dir.glob('*.json'):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    _cache['indices'] = {}
+    logger.info("Forced live refresh: recomputing indices from the live feed...")
+    _cache['indices'] = compute_all_indices()
+    _save_cached_indices(_cache['indices'])
+    logger.info("Forced live refresh complete.")
+
+
 def get_historical_incidents() -> pd.DataFrame:
     """Get historical incidents (cached)"""
     if _cache['incidents'] is None:
@@ -195,7 +221,7 @@ def get_historical_incidents() -> pd.DataFrame:
 
 
 @app.on_event("startup")
-async def startup_event():
+def startup_event():
     """Compute indices on startup, using cache if valid"""
     logger.info("Initializing Danger Index...")
 
@@ -284,7 +310,7 @@ def _to_response(index_data: dict) -> DangerIndexResponse:
 # UI routes
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def root():
+def root():
     """Serve the resident dashboard UI"""
     index_path = os.path.join(STATIC_DIR, 'index.html')
     if not os.path.exists(index_path):
@@ -300,7 +326,7 @@ async def root():
 # API routes
 # --------------------------------------------------------------------------
 @app.get("/health")
-async def health_check():
+def health_check():
     """Health check endpoint"""
     season, _ = get_season_info()
     return {
@@ -313,7 +339,7 @@ async def health_check():
 
 
 @app.get("/localities", response_model=LocalityListResponse)
-async def get_localities():
+def get_localities():
     """List all monitored localities (+ population and ward structure meta)"""
     locality_list = sorted(LOCALITIES.keys())
     from index.calculator import LOCALITY_POPULATION
@@ -338,8 +364,15 @@ async def get_localities():
 
 
 @app.get("/index", response_model=List[DangerIndexResponse])
-async def get_all_indices():
-    """Get Danger Index for all localities (from cache)"""
+def get_all_indices(refresh: bool = False):
+    """Get Danger Index for all localities (from cache)
+
+    ?refresh=1 drops stale caches and recomputes from the live weather
+    feed before returning (used by the UI's 'Retry live feed').
+    """
+
+    if refresh:
+        _force_live_refresh()
 
     if not _cache['indices']:
         # Try to load from cache
@@ -355,7 +388,7 @@ async def get_all_indices():
 
 
 @app.get("/index/{locality}", response_model=DangerIndexResponse)
-async def get_locality_index(locality: str):
+def get_locality_index(locality: str):
     """Get Danger Index for specific locality"""
 
     if locality not in LOCALITIES:
@@ -371,7 +404,7 @@ async def get_locality_index(locality: str):
 
 
 @app.get("/forecast/{locality}", response_model=ForecastResponse)
-async def get_forecast(locality: str, days: int = 7):
+def get_forecast(locality: str, days: int = 7):
     """Get the daily rainfall forecast for a locality (1-7 days)."""
 
     if locality not in LOCALITIES:
@@ -405,7 +438,7 @@ async def get_forecast(locality: str, days: int = 7):
 
 
 @app.get("/danger-forecast/{locality}")
-async def get_danger_forecast(locality: str):
+def get_danger_forecast(locality: str):
     """7-day-ahead danger outlook: per-day tier from the rainfall forecast.
 
     Each day is scored with the SAME model used for today's index, so a
@@ -432,7 +465,7 @@ async def get_danger_forecast(locality: str):
 
 
 @app.get("/incidents", response_model=List[HistoricalIncident])
-async def get_incidents():
+def get_incidents():
     """Get historical incidents (2004-present) in inner Idukki"""
 
     incidents_df = get_historical_incidents()
@@ -453,7 +486,7 @@ async def get_incidents():
 
 
 @app.get("/map", response_class=HTMLResponse)
-async def get_map():
+def get_map():
     """Generate and serve interactive danger map"""
 
     map_file = "/tmp/idukki_danger_map.html"
@@ -470,7 +503,7 @@ async def get_map():
 
 
 @app.get("/report")
-async def download_report(locality: str = "all", format: str = "pdf"):
+def download_report(locality: str = "all", format: str = "pdf"):
     """Seasonal risk report as PDF or DOCX for one locality or the whole district."""
     fmt = format.lower().strip()
     if fmt not in ("pdf", "docx"):
@@ -503,7 +536,7 @@ async def download_report(locality: str = "all", format: str = "pdf"):
 
 
 @app.get("/wards/{locality}")
-async def get_wards(locality: str):
+def get_wards(locality: str):
     """Ward-level micro-zonation for one panchayat (LSG ward structure +
     incident-derived sensitivity + apportioned population)."""
     if locality not in LOCALITIES:
@@ -520,7 +553,7 @@ async def get_wards(locality: str):
 
 
 @app.get("/trends/{locality}")
-async def get_trends(locality: str):
+def get_trends(locality: str):
     """Chart series for a locality: 7-day rainfall outlook (provider-tagged),
     30-day measured monsoon pattern, and 48h wind/humidity/temperature."""
     if locality not in LOCALITIES:
@@ -539,7 +572,7 @@ async def get_trends(locality: str):
 
 
 @app.get("/outlook")
-async def seasonal_outlook():
+def seasonal_outlook():
     """Seasonal outlook: ENSO phase context + per-locality lightning risk."""
     try:
         from outlook import build_outlook
@@ -553,7 +586,7 @@ async def seasonal_outlook():
 # SMS alert subscriptions
 # --------------------------------------------------------------------------
 @app.get("/notify/status")
-async def notify_status():
+def notify_status():
     """Which SMS path is live (Twilio / Fast2SMS / demo outbox) + counts."""
     from notify.sms import provider_status, outbox
     from notify import store
@@ -575,7 +608,7 @@ async def notify_status():
 
 
 @app.post("/notify/subscribe", response_model=None)
-async def notify_subscribe(req: NotifySubscribeRequest):
+def notify_subscribe(req: NotifySubscribeRequest):
     """Register a mobile number for SMS alerts.
 
     Body: {phone, name?, lang: en|ml, localities: [...],
@@ -625,7 +658,7 @@ def send_notify_text(sub: dict, text: str) -> dict:
 
 
 @app.get("/notify/subscribe")
-async def notify_get_subscription(phone: str):
+def notify_get_subscription(phone: str):
     """Fetch the current subscription for a phone number (for pre-fill)."""
     from notify import store
     rec = store.get(phone)
@@ -636,7 +669,7 @@ async def notify_get_subscription(phone: str):
 
 
 @app.delete("/notify/subscribe")
-async def notify_unsubscribe(req: NotifyUnsubscribeRequest):
+def notify_unsubscribe(req: NotifyUnsubscribeRequest):
     """Remove the subscription for a phone number."""
     from notify import store
     removed = store.delete(req.phone)
@@ -646,7 +679,7 @@ async def notify_unsubscribe(req: NotifyUnsubscribeRequest):
 
 
 @app.post("/notify/test")
-async def notify_test(req: NotifyTestRequest):
+def notify_test(req: NotifyTestRequest):
     """Send a test SMS to a phone right now (demo mode returns the preview)."""
     from notify.sms import provider_status
     from notify import store, messages
@@ -673,7 +706,7 @@ async def notify_test(req: NotifyTestRequest):
 
 
 @app.get("/notify/messages")
-async def notify_messages(phone: Optional[str] = None, limit: int = 15):
+def notify_messages(phone: Optional[str] = None, limit: int = 15):
     """Recent SMS outbox entries — audit trail; in demo mode these show exactly
     what would have been sent to each number."""
     from notify.sms import outbox
@@ -689,7 +722,7 @@ async def notify_messages(phone: Optional[str] = None, limit: int = 15):
 
 
 @app.get("/ml")
-async def ml_outlook():
+def ml_outlook():
     """AI outlook: trained-model next-day rainfall + heavy-rain probability."""
     from pathlib import Path as _P
     eval_path = _P(__file__).resolve().parent.parent / "ml" / "models" / "eval.json"
@@ -722,8 +755,14 @@ async def ml_outlook():
 
 
 @app.get("/summary")
-async def get_summary():
-    """Get summary statistics for all localities"""
+def get_summary(refresh: bool = False):
+    """Get summary statistics for all localities.
+
+    ?refresh=1 forces a live re-fetch first (see /index).
+    """
+
+    if refresh:
+        _force_live_refresh()
 
     indices = _cache['indices'] or compute_all_indices()
 
